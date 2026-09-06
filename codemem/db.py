@@ -8,7 +8,7 @@ PRAGMA journal_mode=WAL;
 CREATE TABLE IF NOT EXISTS project (
   id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL,
   description TEXT DEFAULT '', purpose TEXT DEFAULT '', status TEXT DEFAULT 'active',
-  audience TEXT DEFAULT 'personal',
+  audience TEXT DEFAULT 'personal', maturity TEXT DEFAULT '', maturity_note TEXT DEFAULT '',
   tags TEXT DEFAULT '', languages TEXT DEFAULT '',
   remote_url TEXT DEFAULT '', gitea_url TEXT DEFAULT '', github_url TEXT DEFAULT '',
   first_commit TEXT, last_commit TEXT, commit_count INTEGER DEFAULT 0,
@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS asset (
   id INTEGER PRIMARY KEY, project_id INTEGER REFERENCES project(id) ON DELETE SET NULL,
   name TEXT NOT NULL, kind TEXT NOT NULL, path TEXT DEFAULT '', machine TEXT DEFAULT '',
   description TEXT DEFAULT '', usage TEXT DEFAULT '', tags TEXT DEFAULT '',
+  maturity TEXT DEFAULT '', maturity_note TEXT DEFAULT '',
   created_at TEXT, updated_at TEXT, UNIQUE(name, kind));
 CREATE TABLE IF NOT EXISTS note (
   id INTEGER PRIMARY KEY, project_id INTEGER REFERENCES project(id) ON DELETE SET NULL,
@@ -48,7 +49,7 @@ CREATE TABLE IF NOT EXISTS embedding (
   kind TEXT NOT NULL, ref_id INTEGER NOT NULL, model TEXT NOT NULL, hash TEXT, vec BLOB,
   PRIMARY KEY(kind, ref_id));
 CREATE VIRTUAL TABLE IF NOT EXISTS search_index USING fts5(
-  kind UNINDEXED, ref_id UNINDEXED, project UNINDEXED, audience UNINDEXED, title, body, tags,
+  kind UNINDEXED, ref_id UNINDEXED, project UNINDEXED, audience UNINDEXED, maturity UNINDEXED, title, body, tags,
   tokenize='porter unicode61');
 CREATE INDEX IF NOT EXISTS idx_commit_date ON "commit"(date);
 CREATE INDEX IF NOT EXISTS idx_commit_project ON "commit"(project_id, date);
@@ -72,7 +73,39 @@ def connect():
             _conn.row_factory = sqlite3.Row
             _conn.execute("PRAGMA foreign_keys=ON")
             _conn.executescript(SCHEMA)
+            _migrate(_conn)
         return _conn
+
+
+# Controlled vocabulary for maturity. Free text is accepted but these are what filters and the UI expect.
+MATURITY = {
+    "authoritative": "the one to use; maintained and trusted",
+    "usable": "works, reuse with normal care",
+    "experimental": "unproven; may be worth building on",
+    "antiquated": "works but superseded or dated; prefer something newer",
+    "sunset": "being retired; do not build on it",
+    "broken": "does not work as is",
+    "junk": "not worth reusing; kept for reference only",
+}
+MATURITY_RANK = {"authoritative": 1.6, "usable": 1.2, "experimental": 1.0, "": 1.0,
+                 "antiquated": 0.7, "sunset": 0.6, "broken": 0.5, "junk": 0.35}
+
+
+def _migrate(c):
+    """Add columns introduced after the first release; recreate the FTS table if its shape changed."""
+    def cols(t):
+        return {r[1] for r in c.execute(f'PRAGMA table_info("{t}")')}
+    for table in ("project", "asset"):
+        for col in ("maturity", "maturity_note"):
+            if col not in cols(table):
+                c.execute(f'ALTER TABLE "{table}" ADD COLUMN {col} TEXT DEFAULT \'\'')
+    if "maturity" not in cols("search_index"):
+        c.execute("DROP TABLE search_index")
+        c.executescript(SCHEMA)
+        c.commit()
+        from .store import reindex_all
+        reindex_all(keep_embeddings=True)
+    c.commit()
 
 
 @contextmanager
@@ -102,16 +135,22 @@ def one(sql, params=()):
 # Every record type writes itself into search_index through index_item, so search
 # needs no joins and new kinds need no schema change.
 
-def index_item(c, kind, ref_id, title, body, tags="", project=""):
+def index_item(c, kind, ref_id, title, body, tags="", project="", maturity=None):
     """Index one record. Audience is inherited from the project so filtering needs no joins."""
-    audience = ""
+    audience, pmat = "", ""
     if project:
-        r = c.execute("SELECT audience FROM project WHERE name=? COLLATE NOCASE", (project,)).fetchone()
-        audience = (r[0] if r else "") or ""
+        r = c.execute("SELECT audience, maturity FROM project WHERE name=? COLLATE NOCASE", (project,)).fetchone()
+        audience, pmat = ((r[0] or ""), (r[1] or "")) if r else ("", "")
+    if maturity is None:
+        maturity = pmat  # records inherit their project's rating unless they carry their own
     c.execute("DELETE FROM search_index WHERE kind=? AND ref_id=?", (kind, ref_id))
-    c.execute("INSERT INTO search_index(kind, ref_id, project, audience, title, body, tags) VALUES (?,?,?,?,?,?,?)",
-              (kind, ref_id, project or "", audience, title or "", (body or "")[:20000], tags or ""))
-    c.execute("DELETE FROM embedding WHERE kind=? AND ref_id=?", (kind, ref_id))
+    c.execute("INSERT INTO search_index(kind, ref_id, project, audience, maturity, title, body, tags) VALUES (?,?,?,?,?,?,?,?)",
+              (kind, ref_id, project or "", audience, maturity or "", title or "", (body or "")[:20000], tags or ""))
+    if not KEEP_EMBEDDINGS:
+        c.execute("DELETE FROM embedding WHERE kind=? AND ref_id=?", (kind, ref_id))
+
+
+KEEP_EMBEDDINGS = False
 
 
 def unindex(c, kind, ref_id):

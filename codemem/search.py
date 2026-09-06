@@ -6,7 +6,7 @@ BM25 only and say so in the result.
 """
 import hashlib, json, math, struct, threading, urllib.request
 from . import config, db
-from .db import q, one, tx
+from .db import q, one, tx, MATURITY_RANK
 
 _embed_lock = threading.Lock()
 _ollama_ok = None
@@ -46,11 +46,11 @@ def fts_escape(query):
     return " OR ".join(f'"{t}"*' for t in toks[:12])
 
 
-def bm25(query, kinds=None, project=None, limit=30, exclude_audience=None):
+def bm25(query, kinds=None, project=None, limit=30, exclude_audience=None, exclude_maturity=None):
     fq = fts_escape(query)
     if not fq:
         return []
-    sql = "SELECT kind, ref_id, project, title, bm25(search_index) AS score FROM search_index WHERE search_index MATCH ?"
+    sql = "SELECT kind, ref_id, project, title, maturity, bm25(search_index) AS score FROM search_index WHERE search_index MATCH ?"
     params = [fq]
     if kinds:
         sql += f" AND kind IN ({','.join('?' * len(kinds))})"
@@ -61,6 +61,9 @@ def bm25(query, kinds=None, project=None, limit=30, exclude_audience=None):
     if exclude_audience:
         sql += f" AND audience NOT IN ({','.join('?' * len(exclude_audience))})"
         params += list(exclude_audience)
+    if exclude_maturity:
+        sql += f" AND maturity NOT IN ({','.join('?' * len(exclude_maturity))})"
+        params += list(exclude_maturity)
     sql += " ORDER BY score LIMIT ?"
     params.append(limit)
     return q(sql, params)
@@ -92,13 +95,13 @@ def embed_pending(max_items=200):
         return done
 
 
-def semantic(query, kinds=None, project=None, limit=30, exclude_audience=None):
+def semantic(query, kinds=None, project=None, limit=30, exclude_audience=None, exclude_maturity=None):
     vecs = embed([query])
     if not vecs:
         return []
     qv = vecs[0]
     qn = math.sqrt(sum(x * x for x in qv)) or 1.0
-    sql = "SELECT e.kind, e.ref_id, e.vec, s.project, s.title FROM embedding e JOIN search_index s ON s.kind=e.kind AND s.ref_id=e.ref_id"
+    sql = "SELECT e.kind, e.ref_id, e.vec, s.project, s.title, s.maturity FROM embedding e JOIN search_index s ON s.kind=e.kind AND s.ref_id=e.ref_id"
     where, params = [], []
     if kinds:
         where.append(f"e.kind IN ({','.join('?' * len(kinds))})"); params += list(kinds)
@@ -106,6 +109,8 @@ def semantic(query, kinds=None, project=None, limit=30, exclude_audience=None):
         where.append("s.project=? COLLATE NOCASE"); params.append(project)
     if exclude_audience:
         where.append(f"s.audience NOT IN ({','.join('?' * len(exclude_audience))})"); params += list(exclude_audience)
+    if exclude_maturity:
+        where.append(f"s.maturity NOT IN ({','.join('?' * len(exclude_maturity))})"); params += list(exclude_maturity)
     if where:
         sql += " WHERE " + " AND ".join(where)
     scored = []
@@ -115,7 +120,7 @@ def semantic(query, kinds=None, project=None, limit=30, exclude_audience=None):
         vn = math.sqrt(sum(x * x for x in v)) or 1.0
         scored.append((dot / (qn * vn), r))
     scored.sort(key=lambda x: -x[0])
-    return [{"kind": r["kind"], "ref_id": r["ref_id"], "project": r["project"], "title": r["title"], "score": s}
+    return [{"kind": r["kind"], "ref_id": r["ref_id"], "project": r["project"], "title": r["title"], "maturity": r["maturity"], "score": s}
             for s, r in scored[:limit]]
 
 
@@ -135,19 +140,23 @@ def hydrate(kind, ref_id):
     return None
 
 
-def search(query, kinds=None, project=None, limit=10, mode="hybrid", exclude_audience=None):
+def search(query, kinds=None, project=None, limit=10, mode="hybrid", exclude_audience=None, exclude_maturity=None):
     """Returns {'results': [...], 'mode': 'hybrid'|'bm25'} with hydrated records.
-    exclude_audience: list of project audiences to leave out (e.g. ["unrestricted"] in a professional context)."""
-    lex = bm25(query, kinds, project, limit=40, exclude_audience=exclude_audience)
-    sem = semantic(query, kinds, project, limit=40, exclude_audience=exclude_audience) if mode != "bm25" else []
+    exclude_audience: project audiences to leave out (e.g. ["unrestricted"] in a professional context).
+    exclude_maturity: ratings to leave out (e.g. ["junk","broken","sunset"]). Ratings also weight the
+    ranking: authoritative floats up, junk sinks, so unrated and rated results still mix sensibly."""
+    lex = bm25(query, kinds, project, limit=40, exclude_audience=exclude_audience, exclude_maturity=exclude_maturity)
+    sem = semantic(query, kinds, project, limit=40, exclude_audience=exclude_audience, exclude_maturity=exclude_maturity) if mode != "bm25" else []
     used = "hybrid" if sem else "bm25"
-    fused = {}
+    fused, mat = {}, {}
     for rank, r in enumerate(lex):
         k = (r["kind"], r["ref_id"])
-        fused[k] = fused.get(k, 0) + 1.0 / (60 + rank)
+        fused[k] = fused.get(k, 0) + 1.0 / (60 + rank); mat[k] = r["maturity"] or ""
     for rank, r in enumerate(sem):
         k = (r["kind"], r["ref_id"])
-        fused[k] = fused.get(k, 0) + 1.0 / (60 + rank)
+        fused[k] = fused.get(k, 0) + 1.0 / (60 + rank); mat[k] = r["maturity"] or ""
+    for k in fused:
+        fused[k] *= MATURITY_RANK.get(mat[k], 1.0)
     ordered = sorted(fused.items(), key=lambda kv: -kv[1])[:limit]
     out = []
     for (kind, ref_id), score in ordered:

@@ -39,13 +39,20 @@ def upsert_project(name, **fields):
         _index_project(c, p)
         if "audience" in fields:
             c.execute("UPDATE search_index SET audience=? WHERE project=? COLLATE NOCASE", (fields["audience"], p["name"]))
+        if "maturity" in fields:
+            # dependents without their own rating follow the project
+            c.execute("""UPDATE search_index SET maturity=? WHERE project=? COLLATE NOCASE AND kind!='project'
+                         AND NOT (kind='asset' AND ref_id IN (SELECT id FROM asset WHERE maturity!=''))""",
+                      (fields["maturity"], p["name"]))
         return p
 
 
 def _index_project(c, p):
     body = "\n".join(x for x in [p["description"], p["purpose"], "languages: " + (p["languages"] or ""),
                                   p["remote_url"], p["gitea_url"], p["github_url"]] if x)
-    index_item(c, "project", p["id"], p["name"], body, p["tags"], p["name"])
+    if p.get("maturity"):
+        body += f"\nmaturity: {p['maturity']} {p.get('maturity_note') or ''}"
+    index_item(c, "project", p["id"], p["name"], body, p["tags"], p["name"], p.get("maturity") or "")
 
 
 def upsert_location(project_id, machine, path, **fields):
@@ -88,7 +95,9 @@ def upsert_asset(name, kind, project=None, **fields):
         a = one("SELECT a.*, p.name AS project FROM asset a LEFT JOIN project p ON p.id=a.project_id WHERE a.id=?", (aid,))
         body = "\n".join(x for x in [f"kind: {kind}", a["description"], "usage: " + (a["usage"] or ""),
                                       f"{a['machine']}:{a['path']}" if a["path"] else ""] if x)
-        index_item(c, "asset", aid, name, body, a["tags"], a["project"] or "")
+        if a["maturity"]:
+            body += f"\nmaturity: {a['maturity']} {a['maturity_note'] or ''}"
+        index_item(c, "asset", aid, name, body, a["tags"], a["project"] or "", a["maturity"] or None)
         return a
 
 
@@ -138,10 +147,19 @@ def upsert_scan_root(machine, path, note="", enabled=1):
     return one("SELECT * FROM scan_root WHERE machine=? AND path=?", (machine, path))
 
 
-def reindex_all():
+def reindex_all(keep_embeddings=False):
+    db.KEEP_EMBEDDINGS = keep_embeddings
+    try:
+        _reindex_all()
+    finally:
+        db.KEEP_EMBEDDINGS = False
+
+
+def _reindex_all():
     with tx() as c:
         c.execute("DELETE FROM search_index")
-        c.execute("DELETE FROM embedding")
+        if not db.KEEP_EMBEDDINGS:
+            c.execute("DELETE FROM embedding")
         for p in q("SELECT * FROM project"):
             _index_project(c, p)
         for loc in q("SELECT l.*, p.name AS pname FROM location l JOIN project p ON p.id=l.project_id"):
@@ -150,7 +168,7 @@ def reindex_all():
         for a in q("SELECT a.*, p.name AS project FROM asset a LEFT JOIN project p ON p.id=a.project_id"):
             body = "\n".join(x for x in [f"kind: {a['kind']}", a["description"], "usage: " + (a["usage"] or ""),
                                           f"{a['machine']}:{a['path']}" if a["path"] else ""] if x)
-            index_item(c, "asset", a["id"], a["name"], body, a["tags"], a["project"] or "")
+            index_item(c, "asset", a["id"], a["name"], body, a["tags"], a["project"] or "", a["maturity"] or None)
         for n in q("SELECT n.*, p.name AS project FROM note n LEFT JOIN project p ON p.id=n.project_id"):
             index_item(c, "note", n["id"], f"[{n['kind']}] {n['title']}", n["body"], n["tags"], n["project"] or "")
         for d in q("SELECT * FROM doc"):

@@ -10,7 +10,7 @@ from starlette.responses import JSONResponse, HTMLResponse, PlainTextResponse
 from mcp.server.fastmcp import FastMCP
 
 from . import config, search as S, gitsync, scan as SC, knowledge
-from .db import q, one, tx, now, connect
+from .db import q, one, tx, now, connect, MATURITY
 from . import store
 from .store import (get_project, upsert_project, upsert_asset, add_link, upsert_scan_root,
                     project_name_from_remote)
@@ -55,7 +55,7 @@ def brief(project, days=30, limit_notes=8, limit_commits=10):
               (p["id"], limit_notes))
     commits = q('SELECT hash, author, date, substr(message,1,200) AS message, pushed_from FROM "commit" WHERE project_id=? ORDER BY date DESC LIMIT ?',
                 (p["id"], limit_commits))
-    assets = q("SELECT id, name, kind, path, machine, description, usage, tags FROM asset WHERE project_id=? ORDER BY updated_at DESC", (p["id"],))
+    assets = q("SELECT id, name, kind, path, machine, description, usage, tags, maturity, maturity_note FROM asset WHERE project_id=? ORDER BY updated_at DESC", (p["id"],))
     locations = q("SELECT machine, path, branch, dirty, last_local_commit, languages, key_files, last_scanned FROM location WHERE project_id=?", (p["id"],))
     links = q("""SELECT l.relation, l.note, l.from_kind, l.from_id, l.to_kind, l.to_id,
                         CASE l.from_kind WHEN 'project' THEN (SELECT name FROM project WHERE id=l.from_id) WHEN 'asset' THEN (SELECT name FROM asset WHERE id=l.from_id) ELSE '' END AS from_name,
@@ -73,6 +73,8 @@ def brief_text(b):
         out.append(p["description"])
     if p.get("purpose"):
         out.append(f"Purpose: {p['purpose']}")
+    if p.get("maturity"):
+        out.append(f"**Maturity: {p['maturity']}**" + (f" ({p['maturity_note']})" if p.get("maturity_note") else ""))
     meta = [f"status={p['status']}", f"audience={p['audience']}"]
     if p.get("tags"):
         meta.append(f"tags={p['tags']}")
@@ -85,7 +87,7 @@ def brief_text(b):
         out.append("Locations: " + "; ".join(f"{l['machine']}:{l['path']}" + (" (dirty)" if l["dirty"] else "") for l in b["locations"]))
     if b["assets"]:
         out.append("Reusable assets here:")
-        out += [f"- {a['name']} [{a['kind']}] {a['description']}" for a in b["assets"][:8]]
+        out += [f"- {a['name']} [{a['kind']}]" + (f" ({a['maturity']})" if a.get("maturity") else "") + f" {a['description']}" for a in b["assets"][:8]]
     if b["links"]:
         out.append("Links: " + "; ".join(f"{l['from_name']} {l['relation']} {l['to_name']}" for l in b["links"][:8]))
     if b["notes"]:
@@ -102,14 +104,18 @@ def brief_text(b):
 # ---- MCP tools ---------------------------------------------------------------
 
 @mcp.tool()
-def search(query: str = "", kinds: str = "", project: str = "", limit: int = 10, exclude_audience: str = "") -> dict:
+def search(query: str = "", kinds: str = "", project: str = "", limit: int = 10, exclude_audience: str = "",
+           exclude_maturity: str = "") -> dict:
     """Hybrid search (BM25 + embeddings) across projects, assets, notes, commits, locations and docs.
     kinds: comma list to restrict, e.g. "asset,note". exclude_audience: comma list of project audiences
-    to leave out (e.g. "unrestricted" when working professionally). Search BEFORE building something new."""
+    to leave out (e.g. "unrestricted" when working professionally). exclude_maturity: ratings to drop, e.g.
+    "junk,broken,sunset" when you only want things safe to build on. Results carry a maturity field;
+    authoritative ranks up, junk ranks down. Search BEFORE building something new."""
     if not query.strip():
         return {"error": "query is required"}
     ks = [k.strip() for k in kinds.split(",") if k.strip()] or None
-    return S.search(query, ks, project or None, max(1, min(limit, 50)), exclude_audience=_aud(exclude_audience))
+    return S.search(query, ks, project or None, max(1, min(limit, 50)), exclude_audience=_aud(exclude_audience),
+                    exclude_maturity=_aud(exclude_maturity))
 
 
 @mcp.tool()
@@ -126,10 +132,16 @@ def project_brief(name_or_path: str = "", machine: str = "") -> dict:
 
 @mcp.tool()
 def list_projects(status: str = "", tag: str = "", machine: str = "", audience: str = "", exclude_audience: str = "",
-                  limit: int = 200) -> dict:
-    """List projects with a one-line summary each. Filter by status, tag, machine (has a location there), audience."""
-    sql = "SELECT p.id, p.name, p.description, p.status, p.audience, p.tags, p.languages, p.commit_count, p.last_commit, p.gitea_url FROM project p"
+                  maturity: str = "", exclude_maturity: str = "", limit: int = 200) -> dict:
+    """List projects with a one-line summary each. Filter by status, tag, machine (has a location there),
+    audience, maturity (e.g. "authoritative") or exclude_maturity (e.g. "junk,antiquated")."""
+    sql = "SELECT p.id, p.name, p.description, p.status, p.audience, p.maturity, p.maturity_note, p.tags, p.languages, p.commit_count, p.last_commit, p.gitea_url FROM project p"
     where, params = [], []
+    if maturity:
+        where.append("p.maturity=?"); params.append(maturity)
+    exm = _aud(exclude_maturity)
+    if exm:
+        where.append(f"COALESCE(p.maturity,'') NOT IN ({','.join('?' * len(exm))})"); params += exm
     if machine:
         sql += " JOIN location l ON l.project_id=p.id"
         where.append("l.machine=?"); params.append(machine)
@@ -152,42 +164,55 @@ def list_projects(status: str = "", tag: str = "", machine: str = "", audience: 
 
 @mcp.tool()
 def update_project(name: str = "", description: str = "", purpose: str = "", status: str = "", tags: str = "",
-                   audience: str = "", github_url: str = "") -> dict:
+                   audience: str = "", github_url: str = "", maturity: str = "", maturity_note: str = "") -> dict:
     """Create or enrich a project. Only supplied fields change. status: active|paused|done|abandoned|archived.
-    audience: personal|professional|employer (free text; used for filtering). tags: comma list."""
+    audience: personal|professional|employer (free text; used for filtering). tags: comma list.
+    maturity: authoritative|usable|experimental|antiquated|sunset|broken|junk, with maturity_note saying why
+    (e.g. "superseded by pipeline-v2"). Assets in the project inherit it unless rated themselves."""
     if not name:
         return {"error": "name is required"}
+    if maturity and maturity not in MATURITY:
+        return {"error": f"maturity must be one of {list(MATURITY)}", "meanings": MATURITY}
     p = upsert_project(name, description=description, purpose=purpose, status=status, tags=tags,
-                       audience=audience, github_url=github_url)
+                       audience=audience, github_url=github_url, maturity=maturity, maturity_note=maturity_note)
     S.embed_in_background()
     return dict(p)
 
 
 @mcp.tool()
 def register_asset(name: str = "", kind: str = "", description: str = "", usage: str = "", project: str = "",
-                   path: str = "", machine: str = "", tags: str = "") -> dict:
+                   path: str = "", machine: str = "", tags: str = "", maturity: str = "", maturity_note: str = "") -> dict:
     """Record something reusable so it is found next time instead of rebuilt.
     kind: script|module|function|prompt|skill|mcp-server|docker|service|config|dataset|model|doc|tool|pattern.
-    usage: the one line someone needs to reuse it (command, import, URL)."""
+    usage: the one line someone needs to reuse it (command, import, URL).
+    maturity: authoritative|usable|experimental|antiquated|sunset|broken|junk (+ maturity_note why)."""
     if not name or not kind:
         return {"error": "name and kind are required"}
+    if maturity and maturity not in MATURITY:
+        return {"error": f"maturity must be one of {list(MATURITY)}", "meanings": MATURITY}
     a = upsert_asset(name, kind, project=project or None, description=description, usage=usage, path=path,
-                     machine=machine or config.MACHINE, tags=tags)
+                     machine=machine or config.MACHINE, tags=tags, maturity=maturity, maturity_note=maturity_note)
     S.embed_in_background()
     return dict(a)
 
 
 @mcp.tool()
-def find_assets(query: str = "", kind: str = "", tag: str = "", project: str = "", exclude_audience: str = "", limit: int = 20) -> dict:
-    """Find reusable assets. With a query it searches; without, it lists (optionally by kind, tag, project)."""
+def find_assets(query: str = "", kind: str = "", tag: str = "", project: str = "", exclude_audience: str = "",
+                exclude_maturity: str = "", limit: int = 20) -> dict:
+    """Find reusable assets. With a query it searches; without, it lists (optionally by kind, tag, project).
+    exclude_maturity="junk,broken,sunset,antiquated" leaves only things worth building on."""
     if query.strip():
-        r = S.search(query, ["asset"], project or None, limit, exclude_audience=_aud(exclude_audience))
+        r = S.search(query, ["asset"], project or None, limit, exclude_audience=_aud(exclude_audience),
+                     exclude_maturity=_aud(exclude_maturity))
         rows = [x["record"] for x in r["results"]]
         if kind:
             rows = [x for x in rows if x["kind"] == kind]
         return {"mode": r["mode"], "assets": rows}
-    sql = "SELECT a.*, p.name AS project, p.audience FROM asset a LEFT JOIN project p ON p.id=a.project_id"
+    sql = "SELECT a.*, p.name AS project, p.audience, COALESCE(NULLIF(a.maturity,''), p.maturity) AS effective_maturity FROM asset a LEFT JOIN project p ON p.id=a.project_id"
     where, params = [], []
+    exm = _aud(exclude_maturity)
+    if exm:
+        where.append(f"COALESCE(NULLIF(a.maturity,''), p.maturity, '') NOT IN ({','.join('?' * len(exm))})"); params += exm
     if kind:
         where.append("a.kind=?"); params.append(kind)
     if tag:
@@ -252,6 +277,34 @@ def link_items(from_project: str = "", to_project: str = "", relation: str = "us
         return {"error": "could not resolve both ends"}
     add_link(fk, fid, tk, tid, relation, note)
     return {"ok": True, "from": [fk, fid], "to": [tk, tid], "relation": relation}
+
+
+@mcp.tool()
+def rate(name: str = "", maturity: str = "", note: str = "", asset_kind: str = "") -> dict:
+    """Rate a project (or an asset, by giving asset_kind) so future sessions know what is usable and what is not.
+    maturity: authoritative (the one to use) | usable | experimental | antiquated (superseded, prefer newer) |
+    sunset (being retired) | broken | junk (reference only). note: why, and what to use instead.
+    Empty maturity returns the vocabulary and current ratings."""
+    if not maturity:
+        return {"vocabulary": MATURITY,
+                "rated_projects": q("SELECT name, maturity, maturity_note FROM project WHERE maturity!='' ORDER BY maturity, name"),
+                "rated_assets": q("SELECT name, kind, maturity, maturity_note FROM asset WHERE maturity!='' ORDER BY maturity, name")}
+    if maturity not in MATURITY:
+        return {"error": f"maturity must be one of {list(MATURITY)}", "meanings": MATURITY}
+    if not name:
+        return {"error": "name is required"}
+    if asset_kind:
+        a = one("SELECT * FROM asset WHERE name=? COLLATE NOCASE AND kind=?", (name, asset_kind))
+        if not a:
+            return {"error": f"no asset {name!r} of kind {asset_kind!r}"}
+        a = upsert_asset(a["name"], a["kind"], maturity=maturity, maturity_note=note)
+        S.embed_in_background()
+        return {"asset": dict(a)}
+    if not get_project(name):
+        return {"error": f"no project {name!r}; use update_project to create it first"}
+    p = upsert_project(name, maturity=maturity, maturity_note=note)
+    S.embed_in_background()
+    return {"project": dict(p)}
 
 
 @mcp.tool()
@@ -324,6 +377,8 @@ def stats() -> dict:
         "machines": [r["machine"] for r in q("SELECT DISTINCT machine FROM location UNION SELECT DISTINCT machine FROM note WHERE machine!=''")],
         "scan_roots": q("SELECT machine, path, enabled, last_scanned FROM scan_root ORDER BY machine, path"),
         "audiences": q("SELECT audience, count(*) AS n FROM project GROUP BY audience"),
+        "maturity": q("SELECT COALESCE(NULLIF(maturity,''),'unrated') AS maturity, count(*) AS n FROM project GROUP BY 1 ORDER BY n DESC"),
+        "maturity_vocabulary": MATURITY,
         "index_rows": one("SELECT count(*) AS n FROM search_index")["n"],
         "embedded_rows": one("SELECT count(*) AS n FROM embedding")["n"],
         "embeddings": "on" if config.EMBED_ENABLED else "off",
@@ -408,14 +463,15 @@ async def api_search(request: Request):
     qp = request.query_params
     ks = [k for k in qp.get("kinds", "").split(",") if k] or None
     return JSONResponse(S.search(qp.get("q", ""), ks, qp.get("project") or None, int(qp.get("limit", 20)),
-                                 exclude_audience=_aud(qp.get("exclude_audience", ""))) if qp.get("q") else {"results": []})
+                                 exclude_audience=_aud(qp.get("exclude_audience", "")),
+                                 exclude_maturity=_aud(qp.get("exclude_maturity", ""))) if qp.get("q") else {"results": []})
 
 
 @mcp.custom_route("/api/projects", methods=["GET"])
 async def api_projects(request: Request):
     qp = request.query_params
     return JSONResponse(list_projects(qp.get("status", ""), qp.get("tag", ""), qp.get("machine", ""), qp.get("audience", ""),
-                                      qp.get("exclude_audience", ""), 1000))
+                                      qp.get("exclude_audience", ""), qp.get("maturity", ""), qp.get("exclude_maturity", ""), 1000))
 
 
 @mcp.custom_route("/api/project/{name}", methods=["GET"])
@@ -431,17 +487,33 @@ async def api_project(request: Request):
 @mcp.custom_route("/api/project/{name}", methods=["PATCH"])
 async def api_project_patch(request: Request):
     d = await _json(request)
-    allowed = {k: d[k] for k in ("description", "purpose", "status", "tags", "audience", "github_url") if k in d}
+    allowed = {k: d[k] for k in ("description", "purpose", "status", "tags", "audience", "github_url", "maturity", "maturity_note") if k in d}
+    if allowed.get("maturity") and allowed["maturity"] not in MATURITY:
+        return JSONResponse({"error": f"maturity must be one of {list(MATURITY)}"}, status_code=400)
     p = upsert_project(request.path_params["name"], **allowed)
     S.embed_in_background()
     return JSONResponse(dict(p))
+
+
+@mcp.custom_route("/api/asset/{id}", methods=["PATCH"])
+async def api_asset_patch(request: Request):
+    d = await _json(request)
+    a = one("SELECT * FROM asset WHERE id=?", (int(request.path_params["id"]),))
+    if not a:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    if d.get("maturity") and d["maturity"] not in MATURITY:
+        return JSONResponse({"error": f"maturity must be one of {list(MATURITY)}"}, status_code=400)
+    allowed = {k: d[k] for k in ("description", "usage", "tags", "maturity", "maturity_note", "path") if k in d}
+    a = upsert_asset(a["name"], a["kind"], **allowed)
+    S.embed_in_background()
+    return JSONResponse(dict(a))
 
 
 @mcp.custom_route("/api/assets", methods=["GET"])
 async def api_assets(request: Request):
     qp = request.query_params
     return JSONResponse(find_assets(qp.get("q", ""), qp.get("kind", ""), qp.get("tag", ""), qp.get("project", ""),
-                                    qp.get("exclude_audience", ""), 500))
+                                    qp.get("exclude_audience", ""), qp.get("exclude_maturity", ""), 500))
 
 
 @mcp.custom_route("/api/notes", methods=["GET"])
