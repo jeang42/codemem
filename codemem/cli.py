@@ -22,6 +22,8 @@ def main(argv=None):
     bk.add_argument("--dest", default=str(Path.home() / ".codemem" / "backups"))
     bk.add_argument("--keep", type=int, default=30)
     sub.add_parser("sync", help="docs + gitea + scan + embed: the timer job")
+    d = sub.add_parser("describe", help="draft descriptions for own projects that lack one (Ollama, tagged auto-described)")
+    d.add_argument("--dry-run", action="store_true")
     sub.add_parser("stats")
     a = ap.parse_args(argv)
 
@@ -63,6 +65,8 @@ def main(argv=None):
         print("embed"); 
         while embed_pending(): pass
         print("done")
+    elif a.cmd == "describe":
+        from .describe import describe_all; print(f"{describe_all(dry=a.dry_run)} described")
     elif a.cmd == "stats":
         import json
         from .server import stats; print(json.dumps(stats(), indent=1))
