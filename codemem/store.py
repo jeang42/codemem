@@ -4,6 +4,23 @@ from . import db
 from .db import tx, q, one, now, index_item, tags_norm
 
 
+def remote_owner(url):
+    """'https://github.com/ggerganov/llama.cpp' -> 'ggerganov'; None for our own server or no remote."""
+    if not url or "/srv/git/" in url:
+        return None
+    u = url.rstrip("/").removesuffix(".git")
+    if u.startswith("git@"):
+        u = u.split(":", 1)[1]
+    parts = [x for x in u.split("/") if x]
+    return parts[-2].lower() if len(parts) >= 2 else None
+
+
+def is_vendor_remote(url):
+    from . import config
+    o = remote_owner(url)
+    return bool(o) and bool(config.OWN_REMOTE_OWNERS) and o not in config.OWN_REMOTE_OWNERS
+
+
 def project_name_from_remote(url):
     if not url:
         return None
@@ -39,6 +56,8 @@ def upsert_project(name, **fields):
         _index_project(c, p)
         if "audience" in fields:
             c.execute("UPDATE search_index SET audience=? WHERE project=? COLLATE NOCASE", (fields["audience"], p["name"]))
+        if "origin" in fields:
+            c.execute("UPDATE search_index SET origin=? WHERE project=? COLLATE NOCASE", (fields["origin"], p["name"]))
         if "maturity" in fields:
             # dependents without their own rating follow the project
             c.execute("""UPDATE search_index SET maturity=? WHERE project=? COLLATE NOCASE AND kind!='project'

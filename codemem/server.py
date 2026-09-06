@@ -75,7 +75,7 @@ def brief_text(b):
         out.append(f"Purpose: {p['purpose']}")
     if p.get("maturity"):
         out.append(f"**Maturity: {p['maturity']}**" + (f" ({p['maturity_note']})" if p.get("maturity_note") else ""))
-    meta = [f"status={p['status']}", f"audience={p['audience']}"]
+    meta = [f"status={p['status']}", f"audience={p['audience']}"] + (["VENDOR CLONE (not our code)"] if p.get("origin") == "vendor" else [])
     if p.get("tags"):
         meta.append(f"tags={p['tags']}")
     if p.get("commit_count"):
@@ -105,17 +105,18 @@ def brief_text(b):
 
 @mcp.tool()
 def search(query: str = "", kinds: str = "", project: str = "", limit: int = 10, exclude_audience: str = "",
-           exclude_maturity: str = "") -> dict:
+           exclude_maturity: str = "", include_vendor: bool = False) -> dict:
     """Hybrid search (BM25 + embeddings) across projects, assets, notes, commits, locations and docs.
     kinds: comma list to restrict, e.g. "asset,note". exclude_audience: comma list of project audiences
     to leave out (e.g. "unrestricted" when working professionally). exclude_maturity: ratings to drop, e.g.
     "junk,broken,sunset" when you only want things safe to build on. Results carry a maturity field;
-    authoritative ranks up, junk ranks down. Search BEFORE building something new."""
+    authoritative ranks up, junk ranks down. Vendor clones (other people's repos) are left out unless
+    include_vendor=True. Search BEFORE building something new."""
     if not query.strip():
         return {"error": "query is required"}
     ks = [k.strip() for k in kinds.split(",") if k.strip()] or None
     return S.search(query, ks, project or None, max(1, min(limit, 50)), exclude_audience=_aud(exclude_audience),
-                    exclude_maturity=_aud(exclude_maturity))
+                    exclude_maturity=_aud(exclude_maturity), include_vendor=include_vendor)
 
 
 @mcp.tool()
@@ -132,11 +133,14 @@ def project_brief(name_or_path: str = "", machine: str = "") -> dict:
 
 @mcp.tool()
 def list_projects(status: str = "", tag: str = "", machine: str = "", audience: str = "", exclude_audience: str = "",
-                  maturity: str = "", exclude_maturity: str = "", limit: int = 200) -> dict:
+                  maturity: str = "", exclude_maturity: str = "", limit: int = 200, origin: str = "own") -> dict:
     """List projects with a one-line summary each. Filter by status, tag, machine (has a location there),
-    audience, maturity (e.g. "authoritative") or exclude_maturity (e.g. "junk,antiquated")."""
-    sql = "SELECT p.id, p.name, p.description, p.status, p.audience, p.maturity, p.maturity_note, p.tags, p.languages, p.commit_count, p.last_commit, p.gitea_url FROM project p"
+    audience, maturity (e.g. "authoritative") or exclude_maturity (e.g. "junk,antiquated").
+    origin: "own" (default) | "vendor" (cloned third-party repos) | "all"."""
+    sql = "SELECT p.id, p.name, p.description, p.status, p.audience, p.origin, p.maturity, p.maturity_note, p.tags, p.languages, p.commit_count, p.last_commit, p.gitea_url, p.github_url FROM project p"
     where, params = [], []
+    if origin and origin != "all":
+        where.append("p.origin=?"); params.append(origin)
     if maturity:
         where.append("p.maturity=?"); params.append(maturity)
     exm = _aud(exclude_maturity)
@@ -164,17 +168,21 @@ def list_projects(status: str = "", tag: str = "", machine: str = "", audience: 
 
 @mcp.tool()
 def update_project(name: str = "", description: str = "", purpose: str = "", status: str = "", tags: str = "",
-                   audience: str = "", github_url: str = "", maturity: str = "", maturity_note: str = "") -> dict:
+                   audience: str = "", github_url: str = "", maturity: str = "", maturity_note: str = "",
+                   origin: str = "") -> dict:
     """Create or enrich a project. Only supplied fields change. status: active|paused|done|abandoned|archived.
-    audience: personal|professional|employer (free text; used for filtering). tags: comma list.
+    audience: unrestricted (default: personal work, unfiltered) | professional | employer (free text, used for
+    filtering). origin: own | vendor (a third-party clone; hidden from search and lists by default). tags: comma list.
     maturity: authoritative|usable|experimental|antiquated|sunset|broken|junk, with maturity_note saying why
     (e.g. "superseded by pipeline-v2"). Assets in the project inherit it unless rated themselves."""
     if not name:
         return {"error": "name is required"}
     if maturity and maturity not in MATURITY:
         return {"error": f"maturity must be one of {list(MATURITY)}", "meanings": MATURITY}
+    if origin and origin not in ("own", "vendor"):
+        return {"error": "origin must be own or vendor"}
     p = upsert_project(name, description=description, purpose=purpose, status=status, tags=tags,
-                       audience=audience, github_url=github_url, maturity=maturity, maturity_note=maturity_note)
+                       audience=audience, github_url=github_url, maturity=maturity, maturity_note=maturity_note, origin=origin)
     S.embed_in_background()
     return dict(p)
 
@@ -377,6 +385,7 @@ def stats() -> dict:
         "machines": [r["machine"] for r in q("SELECT DISTINCT machine FROM location UNION SELECT DISTINCT machine FROM note WHERE machine!=''")],
         "scan_roots": q("SELECT machine, path, enabled, last_scanned FROM scan_root ORDER BY machine, path"),
         "audiences": q("SELECT audience, count(*) AS n FROM project GROUP BY audience"),
+        "origins": q("SELECT origin, count(*) AS n FROM project GROUP BY origin"),
         "maturity": q("SELECT COALESCE(NULLIF(maturity,''),'unrated') AS maturity, count(*) AS n FROM project GROUP BY 1 ORDER BY n DESC"),
         "maturity_vocabulary": MATURITY,
         "index_rows": one("SELECT count(*) AS n FROM search_index")["n"],
@@ -464,14 +473,16 @@ async def api_search(request: Request):
     ks = [k for k in qp.get("kinds", "").split(",") if k] or None
     return JSONResponse(S.search(qp.get("q", ""), ks, qp.get("project") or None, int(qp.get("limit", 20)),
                                  exclude_audience=_aud(qp.get("exclude_audience", "")),
-                                 exclude_maturity=_aud(qp.get("exclude_maturity", ""))) if qp.get("q") else {"results": []})
+                                 exclude_maturity=_aud(qp.get("exclude_maturity", "")),
+                                 include_vendor=qp.get("include_vendor") == "1") if qp.get("q") else {"results": []})
 
 
 @mcp.custom_route("/api/projects", methods=["GET"])
 async def api_projects(request: Request):
     qp = request.query_params
     return JSONResponse(list_projects(qp.get("status", ""), qp.get("tag", ""), qp.get("machine", ""), qp.get("audience", ""),
-                                      qp.get("exclude_audience", ""), qp.get("maturity", ""), qp.get("exclude_maturity", ""), 1000))
+                                      qp.get("exclude_audience", ""), qp.get("maturity", ""), qp.get("exclude_maturity", ""), 1000,
+                                      qp.get("origin", "own")))
 
 
 @mcp.custom_route("/api/project/{name}", methods=["GET"])
@@ -487,7 +498,7 @@ async def api_project(request: Request):
 @mcp.custom_route("/api/project/{name}", methods=["PATCH"])
 async def api_project_patch(request: Request):
     d = await _json(request)
-    allowed = {k: d[k] for k in ("description", "purpose", "status", "tags", "audience", "github_url", "maturity", "maturity_note") if k in d}
+    allowed = {k: d[k] for k in ("description", "purpose", "status", "tags", "audience", "github_url", "maturity", "maturity_note", "origin") if k in d}
     if allowed.get("maturity") and allowed["maturity"] not in MATURITY:
         return JSONResponse({"error": f"maturity must be one of {list(MATURITY)}"}, status_code=400)
     p = upsert_project(request.path_params["name"], **allowed)

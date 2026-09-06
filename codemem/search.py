@@ -46,7 +46,7 @@ def fts_escape(query):
     return " OR ".join(f'"{t}"*' for t in toks[:12])
 
 
-def bm25(query, kinds=None, project=None, limit=30, exclude_audience=None, exclude_maturity=None):
+def bm25(query, kinds=None, project=None, limit=30, exclude_audience=None, exclude_maturity=None, include_vendor=False):
     fq = fts_escape(query)
     if not fq:
         return []
@@ -64,6 +64,8 @@ def bm25(query, kinds=None, project=None, limit=30, exclude_audience=None, exclu
     if exclude_maturity:
         sql += f" AND maturity NOT IN ({','.join('?' * len(exclude_maturity))})"
         params += list(exclude_maturity)
+    if not include_vendor:
+        sql += " AND origin != 'vendor'"
     sql += " ORDER BY score LIMIT ?"
     params.append(limit)
     return q(sql, params)
@@ -95,7 +97,7 @@ def embed_pending(max_items=200):
         return done
 
 
-def semantic(query, kinds=None, project=None, limit=30, exclude_audience=None, exclude_maturity=None):
+def semantic(query, kinds=None, project=None, limit=30, exclude_audience=None, exclude_maturity=None, include_vendor=False):
     vecs = embed([query])
     if not vecs:
         return []
@@ -111,6 +113,8 @@ def semantic(query, kinds=None, project=None, limit=30, exclude_audience=None, e
         where.append(f"s.audience NOT IN ({','.join('?' * len(exclude_audience))})"); params += list(exclude_audience)
     if exclude_maturity:
         where.append(f"s.maturity NOT IN ({','.join('?' * len(exclude_maturity))})"); params += list(exclude_maturity)
+    if not include_vendor:
+        where.append("s.origin != 'vendor'")
     if where:
         sql += " WHERE " + " AND ".join(where)
     scored = []
@@ -140,13 +144,13 @@ def hydrate(kind, ref_id):
     return None
 
 
-def search(query, kinds=None, project=None, limit=10, mode="hybrid", exclude_audience=None, exclude_maturity=None):
+def search(query, kinds=None, project=None, limit=10, mode="hybrid", exclude_audience=None, exclude_maturity=None, include_vendor=False):
     """Returns {'results': [...], 'mode': 'hybrid'|'bm25'} with hydrated records.
     exclude_audience: project audiences to leave out (e.g. ["unrestricted"] in a professional context).
     exclude_maturity: ratings to leave out (e.g. ["junk","broken","sunset"]). Ratings also weight the
     ranking: authoritative floats up, junk sinks, so unrated and rated results still mix sensibly."""
-    lex = bm25(query, kinds, project, limit=40, exclude_audience=exclude_audience, exclude_maturity=exclude_maturity)
-    sem = semantic(query, kinds, project, limit=40, exclude_audience=exclude_audience, exclude_maturity=exclude_maturity) if mode != "bm25" else []
+    lex = bm25(query, kinds, project, limit=40, exclude_audience=exclude_audience, exclude_maturity=exclude_maturity, include_vendor=include_vendor)
+    sem = semantic(query, kinds, project, limit=40, exclude_audience=exclude_audience, exclude_maturity=exclude_maturity, include_vendor=include_vendor) if mode != "bm25" else []
     used = "hybrid" if sem else "bm25"
     fused, mat = {}, {}
     for rank, r in enumerate(lex):

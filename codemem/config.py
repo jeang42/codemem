@@ -14,6 +14,11 @@ GITEA_URL = os.environ.get("GITEA_URL", "http://127.0.0.1:3000").rstrip("/")
 GITEA_PUBLIC_URL = os.environ.get("GITEA_PUBLIC_URL", GITEA_URL).rstrip("/")
 GITEA_TOKEN_FILE = Path(os.environ.get("GITEA_TOKEN_FILE", GIT_ROOT / ".gitea-token"))
 
+# GitHub/GitLab owners that are YOU. A clone whose remote owner is not listed here is vendor code.
+OWN_REMOTE_OWNERS = {o.strip().lower() for o in os.environ.get("CODEMEM_OWN_OWNERS", "").split(",") if o.strip()}
+# Default audience for new projects. "unrestricted" = personal, no content filtering applied.
+DEFAULT_AUDIENCE = os.environ.get("CODEMEM_DEFAULT_AUDIENCE", "unrestricted")
+
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
 EMBED_MODEL = os.environ.get("CODEMEM_EMBED_MODEL", "nomic-embed-text")
 EMBED_ENABLED = os.environ.get("CODEMEM_EMBED", "1") not in ("0", "false", "no")

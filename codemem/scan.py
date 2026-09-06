@@ -12,7 +12,7 @@ from collections import Counter
 from pathlib import Path
 from . import config
 from .db import now, one, q, tx
-from .store import upsert_project, upsert_location, project_name_from_remote, get_project
+from .store import upsert_project, upsert_location, project_name_from_remote, get_project, is_vendor_remote
 
 MARKERS = {"pyproject.toml", "setup.py", "requirements.txt", "package.json", "Cargo.toml", "go.mod",
            "CMakeLists.txt", "Makefile", "docker-compose.yml", "compose.yml", "Dockerfile", "CLAUDE.md",
@@ -128,6 +128,8 @@ def ingest_scan(payload):
             fields["github_url"] = d["remote_url"].removesuffix(".git")
         elif d.get("remote_url"):
             fields["remote_url"] = d["remote_url"]
+        if is_vendor_remote(d.get("remote_url")):
+            fields["origin"] = "vendor"  # someone else's repo cloned here; never treated as our own work
         if not existed and d.get("readme_head"):
             # first line of the README that is not a heading, badge, or the bare project name
             for line in d["readme_head"].splitlines():

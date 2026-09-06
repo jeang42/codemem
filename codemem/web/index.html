@@ -44,6 +44,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px 8px;
   <form id="sform" onsubmit="return goSearch(event)"><input type="search" id="q" placeholder="search everything…"></form>
   <label class="muted" title="Comma list of project audiences to hide, e.g. unrestricted">hide <input id="exclude" size="9" placeholder="audience"></label>
   <label class="muted" title="Comma list of maturity ratings to hide, e.g. junk,broken,sunset">hide <input id="exmat" size="11" placeholder="maturity"></label>
+  <label class="muted" title="Include cloned third-party repos"><input type="checkbox" id="vendor"> vendor</label>
   <button id="theme" title="toggle theme">◐</button>
 </header>
 <main id="main"></main>
@@ -53,9 +54,10 @@ const root=document.documentElement;
 const MATS=['authoritative','usable','experimental','antiquated','sunset','broken','junk'];
 try{const t=localStorage.getItem('theme');if(t)root.dataset.theme=t;$('#exclude').value=localStorage.getItem('exclude')||'';$('#exmat').value=localStorage.getItem('exmat')||''}catch(e){}
 $('#exmat').onchange=e=>{try{localStorage.setItem('exmat',e.target.value)}catch(_){}route()};
+$('#vendor').onchange=()=>route();
 $('#theme').onclick=()=>{const dark=root.dataset.theme==='dark'||(!root.dataset.theme&&matchMedia('(prefers-color-scheme:dark)').matches);root.dataset.theme=dark?'light':'dark';try{localStorage.setItem('theme',root.dataset.theme)}catch(e){}};
 $('#exclude').onchange=e=>{try{localStorage.setItem('exclude',e.target.value)}catch(_){}route()};
-const ex=()=>{const v=$('#exclude').value.trim(),m=$('#exmat').value.trim();return (v?'&exclude_audience='+encodeURIComponent(v):'')+(m?'&exclude_maturity='+encodeURIComponent(m):'')};
+const ex=()=>{const v=$('#exclude').value.trim(),m=$('#exmat').value.trim();return (v?'&exclude_audience='+encodeURIComponent(v):'')+(m?'&exclude_maturity='+encodeURIComponent(m):'')+($('#vendor').checked?'&include_vendor=1&origin=all':'')};
 const mat=(m,note)=>m?`<span class="mat ${esc(m)}" title="${esc(note||'')}">${esc(m)}</span>`:'';
 const matSel=(name,cur)=>`<select name="${name}"><option value="">unrated</option>${MATS.map(x=>`<option ${x===cur?'selected':''}>${x}</option>`).join('')}</select>`;
 const api=async(p)=>{const r=await fetch('/api'+p);if(!r.ok)throw new Error(r.status);return r.json()};
@@ -72,21 +74,21 @@ const V={
   <div class="two"><div class="card"><h3>Commits, last 7 days</h3>${tbl(a.commits.slice(0,25),['date','project','message','pushed_from'])}</div>
   <div class="card"><h3>Sessions & notes, last 7 days</h3>${a.notes.slice(0,25).map(n=>noteHtml(n)).join('')||'<p class="muted">none yet</p>'}</div></div>
   <div class="card" style="margin-top:14px"><h3>Scan roots</h3>${tbl(s.scan_roots,['machine','path','enabled','last_scanned'])}
-  <p class="muted">Audiences: ${s.audiences.map(x=>`${esc(x.audience)} (${x.n})`).join(', ')}. Maturity: ${s.maturity.map(x=>`${esc(x.maturity)} (${x.n})`).join(', ')}. MCP endpoint: <code>http://${location.host}/mcp</code></p></div>`},
+  <p class="muted">Audiences: ${s.audiences.map(x=>`${esc(x.audience)} (${x.n})`).join(', ')}. Maturity: ${s.maturity.map(x=>`${esc(x.maturity)} (${x.n})`).join(', ')}. Origin: ${s.origins.map(x=>`${esc(x.origin)} (${x.n})`).join(', ')}. MCP endpoint: <code>http://${location.host}/mcp</code></p></div>`},
  async projects(){const st=$('#f_status')?.value||'',tag=$('#f_tag')?.value||'',fm=$('#f_mat')?.value||'';const r=await api(`/projects?status=${st}&tag=${encodeURIComponent(tag)}&maturity=${fm}${ex()}`);
   return `<div class="row"><select id="f_status" onchange="route()"><option value="">any status</option>${['active','paused','done','abandoned','archived'].map(x=>`<option ${x===st?'selected':''}>${x}</option>`).join('')}</select>
   <select id="f_mat" onchange="route()"><option value="">any maturity</option>${MATS.map(x=>`<option ${x===fm?'selected':''}>${x}</option>`).join('')}</select>
   <input id="f_tag" placeholder="tag" value="${esc(tag)}" onchange="route()"><span class="muted">${r.count} projects</span></div>
-  <div class="grid">${r.projects.map(p=>`<div class="card"><h3><a href="#/project/${encodeURIComponent(p.name)}">${esc(p.name)}</a> ${mat(p.maturity,p.maturity_note)}</h3>
+  <div class="grid">${r.projects.map(p=>`<div class="card"><h3><a href="#/project/${encodeURIComponent(p.name)}">${esc(p.name)}</a> ${mat(p.maturity,p.maturity_note)} ${p.origin==='vendor'?'<span class="chip">vendor</span>':''}</h3>
   <div class="muted">${esc(p.status)} · ${esc(p.audience)} · ${p.commit_count||0} commits${p.last_commit?' · '+d10(p.last_commit):''}</div>
   <div>${esc(p.description||'').slice(0,160)}</div><div>${chips(p.tags)}${chips(p.languages)}</div></div>`).join('')}</div>`},
  async project(name){const b=await api('/project/'+encodeURIComponent(name));const p=b.project;
-  return `<h2>${esc(p.name)} ${mat(p.maturity,p.maturity_note)} <span class="muted">${esc(p.status)} · ${esc(p.audience)}</span></h2>${p.maturity_note?`<p class="muted">${esc(p.maturity_note)}</p>`:''}
+  return `<h2>${esc(p.name)} ${mat(p.maturity,p.maturity_note)} ${p.origin==='vendor'?'<span class="chip">vendor clone</span>':''} <span class="muted">${esc(p.status)} · ${esc(p.audience)}</span></h2>${p.maturity_note?`<p class="muted">${esc(p.maturity_note)}</p>`:''}
   <div class="two"><div><div class="card"><h3>About</h3><p>${esc(p.description)||'<span class="muted">no description</span>'}</p>${p.purpose?`<p><b>Purpose:</b> ${esc(p.purpose)}</p>`:''}
   <div>${chips(p.tags)}</div><p class="muted">languages: ${esc(p.languages)}<br>${p.remote_url?`git: <code>${esc(p.remote_url)}</code><br>`:''}${p.gitea_url?`<a href="${esc(p.gitea_url)}" target="_blank">gitea</a> `:''}${p.github_url?`<a href="${esc(p.github_url)}" target="_blank">github</a>`:''}</p>
   <details><summary>edit</summary><form onsubmit="return saveProject(event,'${esc(p.name)}')">
   <p><input name="description" placeholder="description" value="${esc(p.description)}" style="width:100%"></p><p><input name="purpose" placeholder="purpose" value="${esc(p.purpose)}" style="width:100%"></p>
-  <p><input name="tags" placeholder="tags" value="${esc(p.tags)}"> <select name="status">${['active','paused','done','abandoned','archived'].map(x=>`<option ${x===p.status?'selected':''}>${x}</option>`).join('')}</select> <input name="audience" placeholder="audience" value="${esc(p.audience)}" size="10"></p>
+  <p><input name="tags" placeholder="tags" value="${esc(p.tags)}"> <select name="status">${['active','paused','done','abandoned','archived'].map(x=>`<option ${x===p.status?'selected':''}>${x}</option>`).join('')}</select> <input name="audience" placeholder="audience" value="${esc(p.audience)}" size="10"> <select name="origin"><option ${p.origin==='own'?'selected':''}>own</option><option ${p.origin==='vendor'?'selected':''}>vendor</option></select></p>
   <p>${matSel('maturity',p.maturity)} <input name="maturity_note" placeholder="why / what to use instead" value="${esc(p.maturity_note)}" style="width:55%"> <button class="primary">save</button></p></form></details></div>
   <div class="card"><h3>Locations</h3>${b.locations.map(l=>`<div><b>${esc(l.machine)}</b> <code>${esc(l.path)}</code> ${l.branch?esc(l.branch):''} ${l.dirty?'<span class="dirty">dirty</span>':''}<div class="muted">${esc(l.languages||'')} · ${esc(l.key_files||'')} · scanned ${d10(l.last_scanned)}</div>${l.readme_head?`<details><summary class="muted">readme</summary><pre>${esc(l.readme_head)}</pre></details>`:''}</div>`).join('')||'<p class="muted">not seen on any machine yet</p>'}</div>
   <div class="card"><h3>Assets</h3>${b.assets.map(assetHtml).join('')||'<p class="muted">none registered</p>'}</div>
