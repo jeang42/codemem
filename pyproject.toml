@@ -1,0 +1,19 @@
+[project]
+name = "codemem"
+version = "0.1.0"
+description = "system-coding-memory: one MCP memory for every coding project on every machine"
+requires-python = ">=3.11"
+dependencies = ["mcp>=1.10,<2"]
+
+[project.scripts]
+codemem = "codemem.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["codemem*"]
+
+[tool.setuptools.package-data]
+codemem = ["web/*"]

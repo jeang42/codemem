@@ -1,0 +1,10 @@
+[Unit]
+Description=codemem sync every 6 hours
+
+[Timer]
+OnCalendar=*-*-* 00/6:15:00
+RandomizedDelaySec=5m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

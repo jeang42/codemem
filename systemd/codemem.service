@@ -1,0 +1,23 @@
+[Unit]
+Description=codemem MCP (projects, assets, sessions, commits, search, web UI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Adjust WorkingDirectory/ExecStart to where the repo is checked out (%h = the user's home).
+WorkingDirectory=%h/codemem
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+Environment=CODEMEM_HOST=0.0.0.0
+Environment=CODEMEM_PORT=8055
+Environment=CODEMEM_DB=%h/.codemem/codemem.db
+Environment=GIT_ROOT=/srv/git
+Environment=GITEA_URL=http://127.0.0.1:3000
+Environment=OLLAMA_URL=http://127.0.0.1:11434
+ExecStart=%h/codemem/venv/bin/python -m codemem.cli serve
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

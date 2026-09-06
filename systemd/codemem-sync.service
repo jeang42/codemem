@@ -1,0 +1,11 @@
+[Unit]
+Description=codemem sync: re-ingest docs, gitea metadata, rescan local roots, discover, trust, embed
+After=codemem.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/codemem
+Environment=CODEMEM_DB=%h/.codemem/codemem.db
+Environment=GIT_ROOT=/srv/git
+ExecStart=%h/codemem/venv/bin/python -m codemem.cli sync
+Nice=10

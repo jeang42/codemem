@@ -1,0 +1,10 @@
+[Unit]
+Description=codemem nightly database backup
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/codemem
+Environment=CODEMEM_DB=%h/.codemem/codemem.db
+ExecStart=%h/codemem/venv/bin/python -m codemem.cli backup --dest %h/.codemem/backups --keep 30
+Nice=10
+IOSchedulingClass=idle

@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>codemem</title>
+<style>
+:root{--bg:#f6f7f9;--panel:#fff;--fg:#1c1f26;--muted:#6b7280;--line:#e3e6eb;--accent:#2563eb;--chip:#eef2ff;--chipfg:#3730a3;--warn:#b45309;--code:#f1f3f6}
+:root[data-theme=dark]{--bg:#0f1218;--panel:#171b23;--fg:#e6e8ee;--muted:#8b93a3;--line:#2a2f3a;--accent:#7aa2ff;--chip:#1e2540;--chipfg:#b7c4ff;--warn:#f0b35a;--code:#0c0f14}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0f1218;--panel:#171b23;--fg:#e6e8ee;--muted:#8b93a3;--line:#2a2f3a;--accent:#7aa2ff;--chip:#1e2540;--chipfg:#b7c4ff;--warn:#f0b35a;--code:#0c0f14}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+header{display:flex;gap:12px;align-items:center;padding:10px 18px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:5;flex-wrap:wrap}
+header h1{font-size:16px;margin:0 8px 0 0}header h1 span{color:var(--muted);font-weight:400;font-size:12px;margin-left:6px}
+nav a{padding:6px 10px;border-radius:6px;color:var(--fg)}nav a.on{background:var(--chip);color:var(--chipfg)}
+.grow{flex:1}input,select,button,textarea{font:inherit;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 9px}
+input[type=search]{min-width:280px}button{cursor:pointer}button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+main{padding:18px;max-width:1300px;margin:0 auto}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.card h3{margin:0 0 4px;font-size:15px}.muted{color:var(--muted);font-size:12px}
+.chip{display:inline-block;background:var(--chip);color:var(--chipfg);border-radius:999px;padding:1px 8px;font-size:11px;margin:2px 3px 0 0}
+.kind{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}th{font-size:12px;color:var(--muted)}
+.wrap{overflow-x:auto}pre,code{background:var(--code);border-radius:6px;font-size:12.5px}pre{padding:10px;overflow:auto;white-space:pre-wrap}code{padding:1px 4px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:900px){.two{grid-template-columns:1fr}}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.stat{display:inline-block;padding:8px 14px;background:var(--panel);border:1px solid var(--line);border-radius:8px;margin:0 8px 8px 0}.stat b{display:block;font-size:20px}
+.note{border-left:3px solid var(--accent);padding-left:10px;margin:10px 0}.note.session-auto{border-color:var(--muted)}
+.dirty{color:var(--warn)}details summary{cursor:pointer}
+.md p{margin:.4em 0}
+</style>
+</head>
+<body>
+<header>
+  <h1>codemem<span id="machine"></span></h1>
+  <nav>
+    <a href="#/" data-v="home">Overview</a><a href="#/projects" data-v="projects">Projects</a><a href="#/assets" data-v="assets">Assets</a>
+    <a href="#/notes" data-v="notes">Notes</a><a href="#/activity" data-v="activity">Activity</a><a href="#/docs" data-v="docs">Docs</a>
+  </nav>
+  <div class="grow"></div>
+  <form id="sform" onsubmit="return goSearch(event)"><input type="search" id="q" placeholder="search everything…"></form>
+  <label class="muted" title="Comma list of project audiences to hide, e.g. unrestricted">hide <input id="exclude" size="9" placeholder="audience"></label>
+  <button id="theme" title="toggle theme">◐</button>
+</header>
+<main id="main"></main>
+<script>
+const $=s=>document.querySelector(s), esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const root=document.documentElement;
+try{const t=localStorage.getItem('theme');if(t)root.dataset.theme=t;$('#exclude').value=localStorage.getItem('exclude')||''}catch(e){}
+$('#theme').onclick=()=>{const dark=root.dataset.theme==='dark'||(!root.dataset.theme&&matchMedia('(prefers-color-scheme:dark)').matches);root.dataset.theme=dark?'light':'dark';try{localStorage.setItem('theme',root.dataset.theme)}catch(e){}};
+$('#exclude').onchange=e=>{try{localStorage.setItem('exclude',e.target.value)}catch(_){}route()};
+const ex=()=>{const v=$('#exclude').value.trim();return v?'&exclude_audience='+encodeURIComponent(v):''};
+const api=async(p)=>{const r=await fetch('/api'+p);if(!r.ok)throw new Error(r.status);return r.json()};
+const chips=t=>(t||'').split(',').filter(Boolean).map(x=>`<span class="chip">${esc(x)}</span>`).join('');
+const d10=s=>(s||'').slice(0,10);
+const md=s=>{s=esc(s);s=s.replace(/```([\s\S]*?)```/g,(m,c)=>`<pre>${c}</pre>`).replace(/`([^`]+)`/g,'<code>$1</code>');
+  return s.split(/\n{2,}/).map(p=>/^#+\s/.test(p)?`<h4>${p.replace(/^#+\s/,'')}</h4>`:p.startsWith('<pre>')?p:`<p>${p.replace(/\n/g,'<br>')}</p>`).join('')};
+function goSearch(e){e.preventDefault();location.hash='#/search/'+encodeURIComponent($('#q').value);return false}
+const V={
+ async home(){const s=await api('/stats');$('#machine').textContent=s.machine+':'+s.port;
+  const a=await api('/activity?days=7'+ex());
+  return `<div>${['projects','assets','notes','commits','docs','links'].map(k=>`<span class="stat"><b>${s[k]}</b>${k}</span>`).join('')}
+  <span class="stat"><b>${s.embedded_rows}/${s.index_rows}</b>embedded</span><span class="stat"><b>${s.machines.length}</b>machines: ${esc(s.machines.join(', '))}</span></div>
+  <div class="two"><div class="card"><h3>Commits, last 7 days</h3>${tbl(a.commits.slice(0,25),['date','project','message','pushed_from'])}</div>
+  <div class="card"><h3>Sessions & notes, last 7 days</h3>${a.notes.slice(0,25).map(n=>noteHtml(n)).join('')||'<p class="muted">none yet</p>'}</div></div>
+  <div class="card" style="margin-top:14px"><h3>Scan roots</h3>${tbl(s.scan_roots,['machine','path','enabled','last_scanned'])}
+  <p class="muted">Audiences: ${s.audiences.map(x=>`${esc(x.audience)} (${x.n})`).join(', ')}. MCP endpoint: <code>http://${location.host}/mcp</code></p></div>`},
+ async projects(){const st=$('#f_status')?.value||'',tag=$('#f_tag')?.value||'';const r=await api(`/projects?status=${st}&tag=${encodeURIComponent(tag)}${ex()}`);
+  return `<div class="row"><select id="f_status" onchange="route()"><option value="">any status</option>${['active','paused','done','abandoned','archived'].map(x=>`<option ${x===st?'selected':''}>${x}</option>`).join('')}</select>
+  <input id="f_tag" placeholder="tag" value="${esc(tag)}" onchange="route()"><span class="muted">${r.count} projects</span></div>
+  <div class="grid">${r.projects.map(p=>`<div class="card"><h3><a href="#/project/${encodeURIComponent(p.name)}">${esc(p.name)}</a></h3>
+  <div class="muted">${esc(p.status)} · ${esc(p.audience)} · ${p.commit_count||0} commits${p.last_commit?' · '+d10(p.last_commit):''}</div>
+  <div>${esc(p.description||'').slice(0,160)}</div><div>${chips(p.tags)}${chips(p.languages)}</div></div>`).join('')}</div>`},
+ async project(name){const b=await api('/project/'+encodeURIComponent(name));const p=b.project;
+  return `<h2>${esc(p.name)} <span class="muted">${esc(p.status)} · ${esc(p.audience)}</span></h2>
+  <div class="two"><div><div class="card"><h3>About</h3><p>${esc(p.description)||'<span class="muted">no description</span>'}</p>${p.purpose?`<p><b>Purpose:</b> ${esc(p.purpose)}</p>`:''}
+  <div>${chips(p.tags)}</div><p class="muted">languages: ${esc(p.languages)}<br>${p.remote_url?`git: <code>${esc(p.remote_url)}</code><br>`:''}${p.gitea_url?`<a href="${esc(p.gitea_url)}" target="_blank">gitea</a> `:''}${p.github_url?`<a href="${esc(p.github_url)}" target="_blank">github</a>`:''}</p>
+  <details><summary>edit</summary><form onsubmit="return saveProject(event,'${esc(p.name)}')">
+  <p><input name="description" placeholder="description" value="${esc(p.description)}" style="width:100%"></p><p><input name="purpose" placeholder="purpose" value="${esc(p.purpose)}" style="width:100%"></p>
+  <p><input name="tags" placeholder="tags" value="${esc(p.tags)}"> <select name="status">${['active','paused','done','abandoned','archived'].map(x=>`<option ${x===p.status?'selected':''}>${x}</option>`).join('')}</select> <input name="audience" placeholder="audience" value="${esc(p.audience)}" size="10"> <button class="primary">save</button></p></form></details></div>
+  <div class="card"><h3>Locations</h3>${b.locations.map(l=>`<div><b>${esc(l.machine)}</b> <code>${esc(l.path)}</code> ${l.branch?esc(l.branch):''} ${l.dirty?'<span class="dirty">dirty</span>':''}<div class="muted">${esc(l.languages||'')} · ${esc(l.key_files||'')} · scanned ${d10(l.last_scanned)}</div>${l.readme_head?`<details><summary class="muted">readme</summary><pre>${esc(l.readme_head)}</pre></details>`:''}</div>`).join('')||'<p class="muted">not seen on any machine yet</p>'}</div>
+  <div class="card"><h3>Assets</h3>${b.assets.map(assetHtml).join('')||'<p class="muted">none registered</p>'}</div>
+  <div class="card"><h3>Links</h3>${b.links.map(l=>`<div>${esc(l.from_name)} <b>${esc(l.relation)}</b> ${esc(l.to_name)} <span class="muted">${esc(l.note)}</span></div>`).join('')||'<p class="muted">none</p>'}</div></div>
+  <div><div class="card"><h3>Notes & sessions</h3>${b.notes.map(noteHtml).join('')||'<p class="muted">none yet</p>'}</div>
+  <div class="card"><h3>Commits (${p.commit_count||0})</h3><div class="wrap">${tbl(b.commits,['date','hash','message','author','pushed_from'])}</div></div></div></div>`},
+ async assets(){const k=$('#f_kind')?.value||'';const r=await api(`/assets?kind=${k}${ex()}`);const kinds=[...new Set(r.assets.map(a=>a.kind))].sort();
+  return `<div class="row"><select id="f_kind" onchange="route()"><option value="">any kind</option>${kinds.map(x=>`<option ${x===k?'selected':''}>${x}</option>`).join('')}</select><span class="muted">${r.assets.length} assets</span></div><div class="grid">${r.assets.map(a=>`<div class="card">${assetHtml(a)}</div>`).join('')}</div>`},
+ async notes(){const k=$('#f_nkind')?.value||'';const r=await api(`/notes?kind=${k}${ex()}`);
+  return `<div class="row"><select id="f_nkind" onchange="route()"><option value="">any kind</option>${['session','session-auto','decision','howto','resource','issue','idea','note'].map(x=>`<option ${x===k?'selected':''}>${x}</option>`).join('')}</select><span class="muted">${r.notes.length} notes</span></div>${r.notes.map(noteHtml).join('')}`},
+ async activity(){const d=$('#f_days')?.value||14;const a=await api(`/activity?days=${d}${ex()}`);
+  return `<div class="row"><label>days <input id="f_days" type="number" value="${d}" min="1" style="width:70px" onchange="route()"></label></div>
+  <div class="two"><div class="card"><h3>Commits</h3><div class="wrap">${tbl(a.commits,['date','project','message','author','pushed_from'])}</div></div><div class="card"><h3>Notes</h3>${a.notes.map(noteHtml).join('')||'<p class="muted">none</p>'}</div></div>`},
+ async docs(id){if(id){const d=await api('/docs?id='+id);return `<p><a href="#/docs">← docs</a></p><h2>${esc(d.title)}</h2><p class="muted">${esc(d.source)} · ${d10(d.updated_at)}</p><div class="card md">${md(d.body)}</div>`}
+  const r=await api('/docs');return `<div class="card">${tbl(r.docs.map(d=>({...d,title:`<a href="#/docs/${d.id}">${esc(d.title)}</a>`})),['title','source','size','updated_at'],true)}</div>`},
+ async search(qs){$('#q').value=qs;const r=await api(`/search?q=${encodeURIComponent(qs)}&limit=40${ex()}`);
+  return `<p class="muted">${r.results?.length||0} results · mode ${esc(r.mode||'')}</p>${(r.results||[]).map(x=>{const rec=x.record;
+   const title=x.kind==='project'?`<a href="#/project/${encodeURIComponent(rec.name)}">${esc(rec.name)}</a>`:x.kind==='doc'?`<a href="#/docs/${rec.id}">${esc(rec.title)}</a>`:x.kind==='commit'?`${esc(rec.project)} <code>${esc(rec.hash.slice(0,8))}</code>`:esc(rec.name||rec.title);
+   const body=x.kind==='asset'?`${esc(rec.description)} <code>${esc(rec.usage||'')}</code>`:x.kind==='location'?`${esc(rec.machine)}:<code>${esc(rec.path)}</code>`:x.kind==='commit'?esc(rec.message):esc((rec.body||rec.excerpt||rec.description||'').slice(0,400));
+   return `<div class="card" style="margin-bottom:8px"><span class="kind">${x.kind}</span> ${rec.project&&x.kind!=='project'?`<a class="muted" href="#/project/${encodeURIComponent(rec.project)}">${esc(rec.project)}</a>`:''}<h3>${title}</h3><div>${body}</div></div>`}).join('')}`}
+};
+function tbl(rows,cols,raw){if(!rows?.length)return '<p class="muted">none</p>';return `<table><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr>${rows.map(r=>`<tr>${cols.map(c=>{let v=r[c];if(c==='date'||c==='last_scanned')v=d10(v);if(c==='hash')v=`<code>${esc(String(v).slice(0,8))}</code>`;else if(c==='project')v=`<a href="#/project/${encodeURIComponent(v)}">${esc(v)}</a>`;else if(!raw||c!=='title')v=esc(v);return `<td>${v??''}</td>`}).join('')}</tr>`).join('')}</table>`}
+function assetHtml(a){return `<div><span class="kind">${esc(a.kind)}</span> <b>${esc(a.name)}</b> ${a.project?`<a class="muted" href="#/project/${encodeURIComponent(a.project)}">${esc(a.project)}</a>`:''}<div>${esc(a.description)}</div>${a.usage?`<div><code>${esc(a.usage)}</code></div>`:''}<div class="muted">${esc(a.machine||'')}${a.path?':'+esc(a.path):''}</div><div>${chips(a.tags)}</div></div>`}
+function noteHtml(n){return `<div class="note ${esc(n.kind)}"><span class="kind">${esc(n.kind)}</span> <b>${esc(n.title)}</b> <span class="muted">${d10(n.created_at)} · ${esc(n.machine||'')}${n.project?' · <a href="#/project/'+encodeURIComponent(n.project)+'">'+esc(n.project)+'</a>':''}</span><details><summary class="muted">${esc((n.body||'').split('\n')[0].slice(0,140))}</summary><div class="md">${md(n.body)}</div></details>${chips(n.tags)}</div>`}
+async function saveProject(e,name){e.preventDefault();const f=new FormData(e.target);const d={};for(const [k,v] of f)d[k]=v;await fetch('/api/project/'+encodeURIComponent(name),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});route();return false}
+async function route(){const h=location.hash.replace(/^#\/?/,'');const [v,...rest]=h.split('/');const arg=decodeURIComponent(rest.join('/'));const fn=V[v]||V.home;
+ document.querySelectorAll('nav a').forEach(a=>a.classList.toggle('on',a.dataset.v===(v||'home')));
+ try{$('#main').innerHTML=await fn(arg)}catch(err){$('#main').innerHTML=`<p class="dirty">error: ${esc(err.message)}</p>`}}
+addEventListener('hashchange',route);route();
+</script>
+</body>
+</html>
