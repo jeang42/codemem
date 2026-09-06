@@ -12,9 +12,10 @@ chmod +x "$DEST"/*.py
 echo "client scripts -> $DEST"
 
 # 1. MCP server, user scope (all projects on this machine)
-if command -v claude >/dev/null; then
-    claude mcp remove -s user codemem >/dev/null 2>&1 || true
-    claude mcp add --transport http --scope user codemem "$URL/mcp"
+CLAUDE=$(command -v claude || ls "$HOME/.claude/local/claude" 2>/dev/null || true)
+if [ -n "$CLAUDE" ]; then
+    "$CLAUDE" mcp remove -s user codemem >/dev/null 2>&1 || true
+    "$CLAUDE" mcp add --transport http --scope user codemem "$URL/mcp"
     echo "registered MCP server codemem -> $URL/mcp"
 else
     echo "WARNING: claude CLI not on PATH; run manually:  claude mcp add --transport http --scope user codemem $URL/mcp"
