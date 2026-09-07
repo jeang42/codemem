@@ -40,13 +40,13 @@ def asset_text(a):
         except OSError:
             return ""
     p = one("SELECT * FROM project WHERE id=?", (a["project_id"],))
-    if not p:
-        return ""
-    repo, bare = repo_for_project(p)
-    if repo and a["blob_hash"]:
-        raw = _git(repo, "cat-file", "-p", a["blob_hash"], binary=True)
-        return raw.decode("utf-8", "replace") if raw else ""
-    return ""
+    if p:
+        repo, bare = repo_for_project(p)
+        if repo and a["blob_hash"]:
+            raw = _git(repo, "cat-file", "-p", a["blob_hash"], binary=True)
+            if raw:
+                return raw.decode("utf-8", "replace")
+    return a["source_head"] or ""   # shipped by a remote agent (first 250 lines)
 
 
 def function_source(text, name):
@@ -143,15 +143,19 @@ B ({rb['project']} / {rb['path']}):
 
 # ---- stage 2 -----------------------------------------------------------------
 
-def thin_candidates(limit):
+def thin_candidates(limit, machine=""):
+    if machine:   # everything Python on one machine, best trust first (source shipped by its agent)
+        return q("""SELECT a.*, p.name AS project FROM asset a JOIN project p ON p.id=a.project_id
+                    WHERE p.origin='own' AND a.review='' AND a.path LIKE '%.py' AND a.machine=?
+                    ORDER BY COALESCE(a.trust,0) DESC LIMIT ?""", (machine, limit))
     return q("""SELECT a.*, p.name AS project FROM asset a JOIN project p ON p.id=a.project_id
                 WHERE p.origin='own' AND a.trust >= 60 AND a.review='' AND a.path LIKE '%.py'
                 AND (a.description LIKE 'Unclear:%' OR (',' || a.tags || ',') LIKE '%,auto-described,%' OR length(a.description) < 40)
                 ORDER BY a.trust DESC LIMIT ?""", (limit,))
 
 
-def stage2(limit=40, dry=False, log=print):
-    cands = thin_candidates(limit)
+def stage2(limit=40, dry=False, log=print, machine=""):
+    cands = thin_candidates(limit, machine)
     log(f"stage 2: {len(cands)} trusted assets with thin descriptions")
     done = risky = 0
     for i, a in enumerate(cands, 1):

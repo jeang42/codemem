@@ -209,7 +209,10 @@ def scan_bare(repo):
         yield {"path": path, "last_changed": last, "change_count": cnt, "blob_hash": sha, "size": size, **info}
 
 
-def scan_worktree(root, max_files=20000):
+SOURCE_LINES = 250   # how much of a Python file a remote agent ships so the server can review it
+
+
+def scan_worktree(root, max_files=20000, with_source=False):
     """Assets in a working directory (git or not): yields asset dicts with root-relative paths."""
     root = Path(root)
     is_git = (root / ".git").exists()
@@ -247,4 +250,9 @@ def scan_worktree(root, max_files=20000):
                 last = datetime.datetime.fromtimestamp(fp.stat().st_mtime).astimezone().isoformat(timespec="seconds")
             except OSError:
                 pass
-        yield {"path": rel, "last_changed": last, "change_count": cnt, "blob_hash": blob_sha(raw), "size": size, **info}
+        rec = {"path": rel, "last_changed": last, "change_count": cnt, "blob_hash": blob_sha(raw), "size": size, **info}
+        if with_source and rel.endswith(".py"):
+            lines = text.splitlines()
+            rec["source_head"] = "\n".join(lines[:SOURCE_LINES])[:16000]
+            rec["source_lines"] = len(lines)
+        yield rec

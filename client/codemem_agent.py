@@ -123,7 +123,7 @@ def main():
         for d in find(root, depth):
             pr = describe(d)
             if assets:
-                found = list(D.scan_worktree(d))
+                found = list(D.scan_worktree(d, with_source=True))
                 for a in found:
                     if not a.get("description"):
                         try:

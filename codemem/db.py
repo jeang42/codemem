@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS asset (
   maturity TEXT DEFAULT '', maturity_note TEXT DEFAULT '',
   last_changed TEXT, change_count INTEGER, blob_hash TEXT DEFAULT '', size INTEGER, symbols TEXT DEFAULT '',
   imports TEXT DEFAULT '', func_hashes TEXT DEFAULT '', signatures TEXT DEFAULT '', imported_by INTEGER DEFAULT 0,
-  review TEXT DEFAULT '', reviewed_at TEXT,
+  review TEXT DEFAULT '', reviewed_at TEXT, source_head TEXT DEFAULT '',
   trust INTEGER, trust_breakdown TEXT DEFAULT '', verified_at TEXT, verified_note TEXT DEFAULT '',
   created_at TEXT, updated_at TEXT, UNIQUE(name, kind));
 CREATE TABLE IF NOT EXISTS note (
@@ -106,7 +106,7 @@ def _migrate(c):
                 c.execute(f'ALTER TABLE "{table}" ADD COLUMN {col} TEXT DEFAULT \'\'')
     for col, typ in (("last_changed", "TEXT"), ("change_count", "INTEGER"), ("blob_hash", "TEXT DEFAULT ''"), ("size", "INTEGER"), ("symbols", "TEXT DEFAULT ''"),
                      ("imports", "TEXT DEFAULT ''"), ("func_hashes", "TEXT DEFAULT ''"), ("signatures", "TEXT DEFAULT ''"), ("imported_by", "INTEGER DEFAULT 0"),
-                     ("review", "TEXT DEFAULT ''"), ("reviewed_at", "TEXT")):
+                     ("review", "TEXT DEFAULT ''"), ("reviewed_at", "TEXT"), ("source_head", "TEXT DEFAULT ''")):
         if col not in cols("asset"):
             c.execute(f"ALTER TABLE asset ADD COLUMN {col} {typ}")
     for table in ("project", "asset"):

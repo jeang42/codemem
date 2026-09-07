@@ -29,6 +29,7 @@ def main(argv=None):
     rv = sub.add_parser("review", help="targeted model review: near-duplicate confirmation, thin descriptions on trusted assets")
     rv.add_argument("--stage", type=int, choices=[1, 2], default=0, help="run one stage only (default both)")
     rv.add_argument("--limit", type=int, default=40); rv.add_argument("--dry-run", action="store_true")
+    rv.add_argument("--machine", default="", help="stage 2: review every Python asset from this machine (source shipped by its agent)")
     sub.add_parser("trust", help="recompute trust scores for all projects and assets")
     sub.add_parser("stats")
     a = ap.parse_args(argv)
@@ -80,7 +81,7 @@ def main(argv=None):
     elif a.cmd == "review":
         from .review import stage1, stage2
         if a.stage in (0, 1): stage1(a.limit, a.dry_run)
-        if a.stage in (0, 2): stage2(a.limit, a.dry_run)
+        if a.stage in (0, 2): stage2(a.limit, a.dry_run, machine=a.machine)
         from .trust import compute_all; compute_all()
     elif a.cmd == "trust":
         from .trust import compute_all; compute_all()

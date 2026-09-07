@@ -42,6 +42,8 @@ def ingest_assets(project, assets, machine="", base_path="", describe=True):
                   "size": a.get("size"), "symbols": ",".join(a.get("symbols") or [])[:2000],
                   "imports": ",".join(a.get("imports") or [])[:1000], "func_hashes": json.dumps(a.get("func_hashes") or [])[:20000],
                   "signatures": "\n".join(a.get("signatures") or [])[:6000]}
+        if a.get("source_head"):
+            fields["source_head"] = a["source_head"][:16000]
         if existing:
             if not existing["usage"] and a.get("usage"):
                 fields["usage"] = a["usage"]
