@@ -21,6 +21,8 @@ from .discover import repo_for_project
 from .discover_core import _git
 
 MODEL = "qwen3-coder:30b"
+# The model pads: "No hardcoded paths found" is not a risk, nor is a guess about code it did not see.
+NON_RISK = re.compile(r"^(no |none|not detected|nothing|n/a)|(assumed|likely required|may be in environment|not visible|not shown)", re.I)
 MAX_LINES = 250
 
 
@@ -179,7 +181,7 @@ File {a['path']}:
             v = ask(prompt)
         except Exception as e:
             log(f"  [{i}/{len(cands)}] {a['name']}: model error {e}"); continue
-        risks = [r for r in (v.get("risks") or []) if isinstance(r, str) and r.strip()]
+        risks = [r for r in (v.get("risks") or []) if isinstance(r, str) and r.strip() and not NON_RISK.match(r.strip())]
         risky += bool(risks)
         log(f"  [{i}/{len(cands)}] {a['name']} ({time.time()-t0:.0f}s): {v.get('description','')[:90]} | risks: {len(risks)}")
         if dry:
