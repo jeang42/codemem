@@ -156,13 +156,25 @@ def link_shared_code(log=print):
                 if any(n.startswith("identical:") and Path(ha[1]).name in n for n in pairs[(a, b)]):
                     continue  # whole file already reported
                 pairs[(a, b)].add(f"function {ha[2]} ({ha[3]} lines): {ha[1]} = {hb[1]}" + (f" as {hb[2]}" if hb[2] != ha[2] else ""))
+    # Keep model verdicts ("model: ...") from review stage 1 across rebuilds; only the computed parts are regenerated.
+    kept = {}
+    for l in q("SELECT from_id, to_id, note FROM link WHERE relation='shares-code-with'"):
+        parts = [x for x in (l["note"] or "").split("; ") if x.startswith("model:")]
+        if parts:
+            kept[(l["from_id"], l["to_id"])] = parts
     with tx() as c:
-        c.execute("DELETE FROM link WHERE relation='shares-code-with' AND (note LIKE 'identical:%' OR note LIKE 'similar (%' OR note LIKE 'function %')")
+        c.execute("DELETE FROM link WHERE relation='shares-code-with'")
     n = 0
+    seen = set()
     for (a, b), files in pairs.items():
         pa, pb = get_project(a), get_project(b)
         if pa and pb:
-            add_link("project", pa["id"], "project", pb["id"], "shares-code-with", "; ".join(sorted(files))[:1000])
+            key = (pa["id"], pb["id"]); seen.add(key)
+            note = "; ".join(kept.get(key, []) + sorted(files))[:2000]
+            add_link("project", pa["id"], "project", pb["id"], "shares-code-with", note)
             n += 1
+    for key, parts in kept.items():   # verdict pairs whose computed evidence vanished still keep the verdict
+        if key not in seen:
+            add_link("project", key[0], "project", key[1], "shares-code-with", "; ".join(parts)[:2000]); n += 1
     log(f"  shared code: {n} project pairs linked")
     return n
