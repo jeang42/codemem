@@ -5,6 +5,10 @@ $Dest = Join-Path $env:USERPROFILE ".codemem"
 New-Item -ItemType Directory -Force -Path $Dest | Out-Null
 Copy-Item "$PSScriptRoot\codemem_hook.py","$PSScriptRoot\codemem_agent.py" $Dest -Force
 Write-Host "client scripts -> $Dest"
+$cmds = Join-Path $env:USERPROFILE ".claude\commands"
+New-Item -ItemType Directory -Force -Path $cmds | Out-Null
+Copy-Item "$PSScriptRoot\commands\codemem.md" $cmds -Force
+Write-Host "slash command -> $cmds\codemem.md"
 
 if (Get-Command claude -ErrorAction SilentlyContinue) {
     claude mcp remove -s user codemem 2>$null | Out-Null

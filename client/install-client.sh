@@ -10,6 +10,10 @@ mkdir -p "$DEST"
 cp "$src/codemem_hook.py" "$src/codemem_agent.py" "$DEST/"
 chmod +x "$DEST"/*.py
 echo "client scripts -> $DEST"
+# /codemem slash command (user scope): help + brief, or a search when given an argument
+mkdir -p "$HOME/.claude/commands"
+cp "$src/commands/codemem.md" "$HOME/.claude/commands/codemem.md"
+echo "slash command -> ~/.claude/commands/codemem.md  (/codemem, /codemem <query>)"
 
 # 1. MCP server, user scope (all projects on this machine)
 CLAUDE=$(command -v claude || ls "$HOME/.claude/local/claude" 2>/dev/null || true)

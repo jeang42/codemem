@@ -103,6 +103,49 @@ def brief_text(b):
 
 # ---- MCP tools ---------------------------------------------------------------
 
+HELP = """codemem: memory for every coding project on every machine. Web UI http://localhost:8055/
+
+WORKFLOW
+  start of a task   search("what you are about to build")  and  find_assets("...")   -> reuse before rebuilding
+  need a procedure  howto("publish") / howto("add machine") / howto() lists all
+  about a project   project_brief("name" or "/path")
+  built something   register_asset(name, kind, description, usage, project)   usage = the one line to reuse it
+  judged something  rate(name, maturity, note)   or update_project(..., maturity=, maturity_note=)
+  connected things  link_items(from_project, to_project, relation)   uses|could-reuse|supersedes|derived-from|related
+  end of session    log_session(project, summary, decisions, resources, dead_ends, next_steps)
+  brief said "no record of <dir>"  update_project(name, description, path="<dir>")
+
+TOOLS
+  search list_projects project_brief update_project register_asset find_assets rate link_items
+  log_session add_note howto activity add_scan_root scan_path stats help
+
+LABELS
+  audience  unrestricted (default: personal work, unfiltered) | professional | employer
+            filter with exclude_audience="unrestricted" in a professional context; never filtered on its own
+  origin    own | vendor (third-party clones; HIDDEN from search/list unless include_vendor=True / origin="all")
+  maturity  authoritative > usable > experimental > (unrated) > antiquated > sunset > broken > junk
+            weights search ranking; drop with exclude_maturity="junk,broken,sunset"
+  status    active | paused | done | abandoned | archived
+  tags      free comma list. auto-described marks a model-drafted placeholder description.
+
+DATA SOURCES  git server push hook (commits within seconds), Gitea metadata, local scans of registered roots,
+  ingested docs (CODEMEM_DOC_SOURCES), Claude Code SessionStart/SessionEnd hooks, and what you write here.
+Docs: docs/USER_GUIDE.md in the codemem repo, also ingested and searchable.
+"""
+
+
+@mcp.tool()
+def help(topic: str = "") -> dict:
+    """How to use codemem: workflow, tool list, label vocabularies, data sources. Call with no arguments
+    for the overview; a topic (e.g. "maturity", "audience", "vendor", "session") narrows it. Cheap: no DB access."""
+    if not topic.strip():
+        return {"help": HELP}
+    t = topic.lower()
+    lines = [l for l in HELP.splitlines() if t in l.lower()]
+    extra = {"maturity": MATURITY}.get(t, None)
+    return {"topic": topic, "matches": lines or ["nothing matched; call help() for the overview"], "detail": extra}
+
+
 @mcp.tool()
 def search(query: str = "", kinds: str = "", project: str = "", limit: int = 10, exclude_audience: str = "",
            exclude_maturity: str = "", include_vendor: bool = False) -> dict:
