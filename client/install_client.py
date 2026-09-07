@@ -42,6 +42,8 @@ def main():
     DEST.mkdir(parents=True, exist_ok=True)
     for f in ("codemem_hook.py", "codemem_agent.py"):
         shutil.copy(SRC / f, DEST / f)
+    # the shared discovery rules, so the agent finds assets exactly as the server does
+    shutil.copy(SRC.parent / "codemem" / "discover_core.py", DEST / "codemem_discover.py")
     say(f"client scripts -> {DEST}")
     cmds = HOME / ".claude" / "commands"
     cmds.mkdir(parents=True, exist_ok=True)

@@ -12,7 +12,7 @@ from collections import Counter
 from pathlib import Path
 from . import config
 from .db import now, one, q, tx
-from .store import upsert_project, upsert_location, project_name_from_remote, get_project, is_vendor_remote
+from .store import upsert_project, upsert_location, project_name_from_remote, get_project, is_vendor_remote, is_local_remote
 
 MARKERS = {"pyproject.toml", "setup.py", "requirements.txt", "package.json", "Cargo.toml", "go.mod",
            "CMakeLists.txt", "Makefile", "docker-compose.yml", "compose.yml", "Dockerfile", "CLAUDE.md",
@@ -119,16 +119,20 @@ def ingest_scan(payload):
     """Import a scan payload (local or posted by a remote agent). Returns counts."""
     machine = payload.get("machine") or "unknown"
     created = updated = 0
+    asset_stats = {}
     for d in payload.get("projects", []):
-        name = project_name_from_remote(d.get("remote_url")) or d["name"]
+        remote = d.get("remote_url") or ""
+        if is_local_remote(remote):
+            remote = ""   # a clone of a local path (backup mirror, L:/..., file://) says nothing about the project's home
+        name = project_name_from_remote(remote) or d["name"]
         existed = get_project(name) is not None
         primary_langs = ",".join(x.split(":")[0] for x in (d.get("languages") or "").split(",") if x)
         fields = {"languages": primary_langs}
-        if d.get("remote_url", "").startswith("https://github.com"):
-            fields["github_url"] = d["remote_url"].removesuffix(".git")
-        elif d.get("remote_url"):
-            fields["remote_url"] = d["remote_url"]
-        if is_vendor_remote(d.get("remote_url")):
+        if remote.startswith("https://github.com"):
+            fields["github_url"] = remote.removesuffix(".git")
+        elif remote:
+            fields["remote_url"] = remote
+        if is_vendor_remote(remote):
             fields["origin"] = "vendor"  # someone else's repo cloned here; never treated as our own work
         if not existed and d.get("readme_head"):
             # first line of the README that is not a heading, badge, or the bare project name
@@ -145,12 +149,23 @@ def ingest_scan(payload):
                         key_files=d.get("key_files") or "", readme_head=d.get("readme_head") or "")
         created += 0 if existed else 1
         updated += 1 if existed else 0
+        if d.get("assets") and p["origin"] != "vendor":
+            from .discover import ingest_assets
+            r = ingest_assets(p, d["assets"], machine=machine, base_path=d["path"].replace("\\", "/").rstrip("/"), describe=True)
+            asset_stats = {k: asset_stats.get(k, 0) + v for k, v in r.items()}
     with tx() as c:
         for r in payload.get("roots", []):
             c.execute("""INSERT INTO scan_root(machine, path, last_scanned) VALUES (?,?,?)
                          ON CONFLICT(machine, path) DO UPDATE SET last_scanned=excluded.last_scanned""",
                       (machine, r, now()))
-    return {"machine": machine, "projects": len(payload.get("projects", [])), "created": created, "updated": updated}
+    out = {"machine": machine, "projects": len(payload.get("projects", [])), "created": created, "updated": updated}
+    if asset_stats:
+        from .discover import link_shared_code
+        from .trust import compute_all
+        out["assets"] = asset_stats
+        out["links"] = link_shared_code(log=lambda *_: None)
+        compute_all(log=lambda *_: None)
+    return out
 
 
 def scan_local(roots=None, machine=config.MACHINE):

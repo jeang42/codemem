@@ -1,18 +1,30 @@
 """Write-side helpers. Every mutation goes through here so the search index stays in step."""
-import os
+import os, re
 from . import db
 from .db import tx, q, one, now, index_item, tags_norm
 
 
+def is_local_remote(url):
+    """A filesystem path used as a remote: drive letters, absolute/relative paths, file://, UNC. Not hosted anywhere."""
+    if not url:
+        return True
+    u = url.strip()
+    return (u.startswith("file://") or u.startswith("/") or u.startswith("\\\\") or u.startswith(".")
+            or re.match(r"^[A-Za-z]:[/\\]", u) is not None
+            or ("://" not in u and "@" not in u))
+
+
 def remote_owner(url):
-    """'https://github.com/ggerganov/llama.cpp' -> 'ggerganov'; None for our own server or no remote."""
-    if not url or "/srv/git/" in url:
+    """'https://github.com/ggerganov/llama.cpp' -> 'ggerganov'; None for our own server, local paths, or no remote."""
+    if is_local_remote(url) or "/srv/git/" in url:
         return None
     u = url.rstrip("/").removesuffix(".git")
-    if u.startswith("git@"):
-        u = u.split(":", 1)[1]
+    if "://" in u:
+        u = u.split("://", 1)[1]
+    if "@" in u and ":" in u.split("@", 1)[1] and "/" not in u.split("@", 1)[1].split(":", 1)[0]:
+        u = u.split("@", 1)[1].replace(":", "/", 1)   # scp form git@host:owner/repo
     parts = [x for x in u.split("/") if x]
-    return parts[-2].lower() if len(parts) >= 2 else None
+    return parts[-2].lower() if len(parts) >= 3 else None
 
 
 def is_vendor_remote(url):

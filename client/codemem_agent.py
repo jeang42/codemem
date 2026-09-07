@@ -1,17 +1,27 @@
 #!/usr/bin/env python3
 """Remote scan agent for machines other than the server. Stdlib only.
 
-Reads this machine's scan roots from the server (or takes them on the command line), scans them
-the same way the server does, and posts the result to /ingest/scan.
+Finds every project under the given roots (or this machine's registered scan roots), records
+each one's git state and README, then runs the same asset discovery the server does (scripts,
+modules, hooks, Dockerfiles, units, MCP servers, prompts, skills, with dates from git log) and
+posts everything to /ingest/scan. The server names, describes, links shared code across all
+machines, and rescores trust.
 
-    python3 codemem_agent.py                # roots registered for this machine via add_scan_root
-    python3 codemem_agent.py ~/Coding ~/src # explicit roots (also registers them)
+    python codemem_agent.py                       # roots registered for this machine via add_scan_root
+    python codemem_agent.py E:/development ~/src  # explicit roots (also registers them)
+    python codemem_agent.py --depth 8 --no-assets E:/dev
 
-Config: CODEMEM_URL, CODEMEM_MACHINE. Nothing is scanned until a root is registered.
+Needs codemem_discover.py beside it (the installer puts it there). Config: CODEMEM_URL, CODEMEM_MACHINE.
 """
 import json, os, socket, subprocess, sys, time, urllib.parse, urllib.request
 from collections import Counter
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    import codemem_discover as D
+except ImportError:
+    D = None
 
 URL = os.environ.get("CODEMEM_URL", "http://localhost:8055").rstrip("/")
 MACHINE = os.environ.get("CODEMEM_MACHINE", socket.gethostname().split(".")[0])
@@ -38,7 +48,7 @@ def is_project(p):
     return (p / ".git").exists() or any((p / m).exists() for m in MARKERS) or any(p.glob("*.csproj")) or any(p.glob("*.sln"))
 
 
-def find(root, depth=3):
+def find(root, depth=6):
     root = Path(root).expanduser()
     stack = [(root, 0)]
     while stack:
@@ -82,13 +92,39 @@ def describe(p):
 
 
 def main():
-    roots = [str(Path(r).expanduser()) for r in sys.argv[1:]]
+    args = sys.argv[1:]
+    depth, assets = 6, True
+    roots = []
+    while args:
+        a = args.pop(0)
+        if a == "--depth":
+            depth = int(args.pop(0))
+        elif a == "--no-assets":
+            assets = False
+        else:
+            roots.append(str(Path(a).expanduser()))
+    if assets and D is None:
+        print("codemem_discover.py not found beside the agent; re-run the installer or pass --no-assets"); return
     if not roots:
         with urllib.request.urlopen(f"{URL}/scan_roots?machine={urllib.parse.quote(MACHINE)}", timeout=10) as r:
             roots = [x["path"] for x in json.load(r)["roots"]]
     if not roots:
         print(f"no scan roots registered for {MACHINE}; pass directories or use add_scan_root"); return
-    projects = [describe(d) for root in roots for d in find(root)]
+    projects = []
+    for root in roots:
+        for d in find(root, depth):
+            pr = describe(d)
+            if assets:
+                found = list(D.scan_worktree(d))
+                for a in found:
+                    if not a.get("description"):
+                        try:
+                            a["head"] = "\n".join((d / a["path"]).read_text(errors="replace").splitlines()[:60])
+                        except OSError:
+                            pass
+                pr["assets"] = found
+            projects.append(pr)
+            print(f"  {pr['name']}: {len(pr.get('assets', []))} assets")
     payload = {"machine": MACHINE, "roots": roots, "scanned_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "projects": projects}
     req = urllib.request.Request(f"{URL}/ingest/scan", data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=60) as r:
