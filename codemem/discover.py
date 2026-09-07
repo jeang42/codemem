@@ -18,8 +18,9 @@ from .db import q, one, tx, now
 from .store import upsert_asset, add_link, get_project
 
 DIR_HINTS = ("tools/", "scripts/", "bin/", "hooks/", "prompts/", "skills/", "utils/", "utilities/", "lib/", "helpers/")
-SKIP_PARTS = ("test", "tests/", "__pycache__", "node_modules", "venv", ".venv", "site-packages", "migrations/",
-              "vendor/", "third_party", "dist/", "build/", "static/", "assets/", "examples/", "example")
+SKIP_PARTS = ("test", "tests/", "__pycache__", "node_modules", "venv", ".venv", "-env/", "_env/", "env/bin/", "site-packages",
+              "migrations/", "vendor/", "third_party", "dist/", "build/", "static/", "assets/", "examples/", "example",
+              "activate", "/lib/python")
 SKIP_NAMES = {"__init__.py", "setup.py", "conftest.py", "manage.py", "wsgi.py", "asgi.py"}
 MIN_SIZE, MAX_SIZE = 400, 400_000
 DESCRIBE_MODEL = "qwen3-coder:30b"
@@ -145,6 +146,13 @@ def draft_description(path, text):
         return ""
 
 
+def asset_name(path, project):
+    """'tools/server.py (myproject)': keep the parent dir so generic names stay unique within a repo."""
+    pp = Path(path)
+    short = f"{pp.parent.name}/{pp.name}" if pp.parent.name else pp.name
+    return f"{short} ({project})"
+
+
 def repo_for_project(p):
     bare = config.GIT_ROOT / f"{p['name']}.git"
     if bare.is_dir() and _git(bare, "rev-parse", "HEAD").strip():
@@ -199,7 +207,7 @@ def discover(names=None, describe=True, log=print):
                     if desc:
                         tags += ",auto-described"; drafted += 1
                 abs_path = f"{local_abs['path']}/{path}" if local_abs else path
-                upsert_asset(f"{Path(path).name} ({p['name']})", info["kind"], project=p["name"], path=abs_path,
+                upsert_asset(asset_name(path, p["name"]), info["kind"], project=p["name"], path=abs_path,
                              machine=config.MACHINE if local_abs else "", description=desc or f"Unclear: no docstring in {path}",
                              usage=info["usage"], tags=tags, **fields)
                 created += 1
