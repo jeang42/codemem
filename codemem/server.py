@@ -57,12 +57,19 @@ def brief(project, days=30, limit_notes=8, limit_commits=10):
                 (p["id"], limit_commits))
     assets = q("SELECT id, name, kind, path, machine, description, usage, tags, maturity, maturity_note, trust, trust_breakdown, verified_at, last_changed, change_count FROM asset WHERE project_id=? ORDER BY COALESCE(trust,0) DESC, updated_at DESC", (p["id"],))
     locations = q("SELECT machine, path, branch, dirty, last_local_commit, languages, key_files, last_scanned FROM location WHERE project_id=?", (p["id"],))
+    import sys
+    deps = {}
+    for a in q("SELECT imports FROM asset WHERE project_id=? AND imports!=''", (p["id"],)):
+        for m in a["imports"].split(","):
+            if m and m not in sys.stdlib_module_names:
+                deps[m] = deps.get(m, 0) + 1
     links = q("""SELECT l.relation, l.note, l.from_kind, l.from_id, l.to_kind, l.to_id,
                         CASE l.from_kind WHEN 'project' THEN (SELECT name FROM project WHERE id=l.from_id) WHEN 'asset' THEN (SELECT name FROM asset WHERE id=l.from_id) ELSE '' END AS from_name,
                         CASE l.to_kind WHEN 'project' THEN (SELECT name FROM project WHERE id=l.to_id) WHEN 'asset' THEN (SELECT name FROM asset WHERE id=l.to_id) ELSE '' END AS to_name
                  FROM link l WHERE (l.from_kind='project' AND l.from_id=?) OR (l.to_kind='project' AND l.to_id=?)""",
               (p["id"], p["id"]))
-    return {"project": dict(p), "locations": locations, "assets": assets, "notes": notes, "commits": commits, "links": links}
+    return {"project": dict(p), "locations": locations, "assets": assets, "notes": notes, "commits": commits, "links": links,
+            "dependencies": sorted(deps, key=lambda k: -deps[k])[:25]}
 
 
 def _trust_words(rec):
@@ -105,6 +112,8 @@ def brief_text(b):
     if b["assets"]:
         out.append("Reusable assets here:")
         out += [f"- {a['name']} [{a['kind']}]" + (f" ({a['maturity']})" if a.get("maturity") else "") + (f" trust {a['trust']}" if a.get("trust") is not None else "") + f" {a['description'][:120]}" for a in b["assets"][:8]]
+    if b.get("dependencies"):
+        out.append("Third-party imports: " + ", ".join(b["dependencies"][:15]))
     if b["links"]:
         out.append("Links: " + "; ".join(f"{l['from_name']} {l['relation']} {l['to_name']}" for l in b["links"][:8]))
     if b["notes"]:

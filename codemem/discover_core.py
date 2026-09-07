@@ -7,6 +7,67 @@ Given a project directory (or a bare repo), yields asset dicts:
 import ast, hashlib, os, re, subprocess
 from pathlib import Path
 
+MIN_FUNC_LINES = 6   # smaller functions are boilerplate and match by accident
+
+
+class _Normalize(ast.NodeTransformer):
+    """Rename local identifiers positionally so a copied function still hashes the same after a
+    rename pass. Attribute names, call targets and constants are kept: they carry the behaviour."""
+    def __init__(self):
+        self.names = {}
+    def _n(self, name):
+        return self.names.setdefault(name, f"v{len(self.names)}")
+    def visit_Name(self, node):
+        return ast.copy_location(ast.Name(id=self._n(node.id), ctx=node.ctx), node)
+    def visit_arg(self, node):
+        node.arg = self._n(node.arg); node.annotation = None
+        return node
+    def visit_ExceptHandler(self, node):
+        if node.name:
+            node.name = self._n(node.name)   # `except E as e` binds a plain string, not a Name node
+        self.generic_visit(node); return node
+    def visit_Global(self, node):
+        node.names = [self._n(n) for n in node.names]; return node
+    visit_Nonlocal = visit_Global
+    def visit_FunctionDef(self, node):
+        node.name = "f"; node.returns = None; node.decorator_list = []
+        if node.body and isinstance(node.body[0], ast.Expr) and isinstance(getattr(node.body[0], "value", None), ast.Constant) \
+                and isinstance(node.body[0].value.value, str):
+            node.body = node.body[1:] or [ast.Pass()]   # docstrings never count
+        self.generic_visit(node); return node
+    visit_AsyncFunctionDef = visit_FunctionDef
+
+
+def python_deep(tree):
+    """imports (top-level module names), per-function normalized hashes, and signature lines."""
+    imports = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Import):
+            imports |= {a.name.split(".")[0] for a in n.names}
+        elif isinstance(n, ast.ImportFrom) and n.module and not n.level:
+            imports.add(n.module.split(".")[0])
+    funcs, sigs = [], []
+    def visit(body, prefix=""):
+        for n in body:
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                lines = (n.end_lineno or n.lineno) - n.lineno + 1
+                try:
+                    args = ast.unparse(n.args)
+                except Exception:
+                    args = "..."
+                doc = (ast.get_docstring(n) or "").strip().split("\n")[0][:120]
+                sigs.append(f"def {prefix}{n.name}({args})" + (f": {doc}" if doc else ""))
+                if lines >= MIN_FUNC_LINES:
+                    body_only = ast.Module(body=[ast.fix_missing_locations(_Normalize().visit(ast.parse(ast.unparse(n))))], type_ignores=[])
+                    dumped = ast.dump(body_only, annotate_fields=False)
+                    dumped = re.sub(r"Constant\('(?:[^'\\]|\\.){40,}'\)", "Constant('...')", dumped)  # long strings (docstrings) don't count
+                    funcs.append({"name": prefix + n.name, "hash": hashlib.sha1(dumped.encode()).hexdigest()[:16], "lines": lines})
+            elif isinstance(n, ast.ClassDef):
+                sigs.append(f"class {n.name}")
+                visit(n.body, prefix=n.name + ".")
+    visit(tree.body)
+    return sorted(imports), funcs, sigs
+
 DIR_HINTS = ("tools/", "scripts/", "bin/", "hooks/", "prompts/", "skills/", "utils/", "utilities/", "lib/", "helpers/")
 SKIP_PARTS = ("test", "tests/", "__pycache__", "node_modules", "venv", ".venv", "-env/", "_env/", "env/bin/", "site-packages",
               "migrations/", "vendor/", "third_party", "dist/", "build/", "static/", "assets/", "examples/", "example",
@@ -39,12 +100,14 @@ def analyse(path, text):
     name = Path(path).name
     low = path.lower()
     desc, usage, funcs, kind = "", "", [], None
+    imports, fhashes, sigs = [], [], []
     if ext == ".py":
         try:
             tree = ast.parse(text)
             desc = (ast.get_docstring(tree) or "").strip()
             funcs = sorted({n.name for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))})
-        except SyntaxError:
+            imports, fhashes, sigs = python_deep(tree)
+        except (SyntaxError, ValueError, RecursionError):
             pass
         has_main = "__main__" in text or "argparse" in text or "click" in text
         if "FastMCP" in text or "mcp.server" in text or "MCPServer" in text:
@@ -84,7 +147,8 @@ def analyse(path, text):
         return None
     if desc:
         desc = desc.split("\n\n")[0].strip()[:600]
-    return {"kind": kind, "description": desc, "usage": usage, "symbols": funcs}
+    return {"kind": kind, "description": desc, "usage": usage, "symbols": funcs,
+            "imports": imports, "func_hashes": fhashes, "signatures": sigs[:80]}
 
 
 def asset_name(path, project):

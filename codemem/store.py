@@ -125,7 +125,9 @@ def upsert_asset(name, kind, project=None, **fields):
             aid = c.execute("SELECT last_insert_rowid()").fetchone()[0]
         a = one("SELECT a.*, p.name AS project FROM asset a LEFT JOIN project p ON p.id=a.project_id WHERE a.id=?", (aid,))
         body = "\n".join(x for x in [f"kind: {kind}", a["description"], "usage: " + (a["usage"] or ""),
-                                      f"{a['machine']}:{a['path']}" if a["path"] else ""] if x)
+                                      f"{a['machine']}:{a['path']}" if a["path"] else "",
+                                      ("imports: " + a["imports"]) if a["imports"] else "",
+                                      a["signatures"] or ""] if x)
         if a["maturity"]:
             body += f"\nmaturity: {a['maturity']} {a['maturity_note'] or ''}"
         index_item(c, "asset", aid, name, body, a["tags"], a["project"] or "", a["maturity"] or None)
@@ -198,7 +200,8 @@ def _reindex_all():
             index_item(c, "location", loc["id"], f"{loc['pname']} on {loc['machine']}", body, "", loc["pname"])
         for a in q("SELECT a.*, p.name AS project FROM asset a LEFT JOIN project p ON p.id=a.project_id"):
             body = "\n".join(x for x in [f"kind: {a['kind']}", a["description"], "usage: " + (a["usage"] or ""),
-                                          f"{a['machine']}:{a['path']}" if a["path"] else ""] if x)
+                                          f"{a['machine']}:{a['path']}" if a["path"] else "",
+                                          ("imports: " + a["imports"]) if a["imports"] else "", a["signatures"] or ""] if x)
             index_item(c, "asset", a["id"], a["name"], body, a["tags"], a["project"] or "", a["maturity"] or None)
         for n in q("SELECT n.*, p.name AS project FROM note n LEFT JOIN project p ON p.id=n.project_id"):
             index_item(c, "note", n["id"], f"[{n['kind']}] {n['title']}", n["body"], n["tags"], n["project"] or "")

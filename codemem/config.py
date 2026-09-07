@@ -35,5 +35,6 @@ DEFAULT_SCAN_ROOTS = [s for s in os.environ.get("CODEMEM_SCAN_ROOTS", ":".join([
 
 SKIP_DIRS = {".git", "node_modules", "venv", ".venv", "env", "__pycache__", ".cache", "dist",
              "build", ".next", "site-packages", ".tox", ".mypy_cache",
-             "target", ".idea", ".vscode", "checkpoints", "models", "outputs", "output", "data"}
+             "target", ".idea", ".vscode", "checkpoints", "models", "outputs", "output", "data",
+             "backup", "backups", "archive", "archives", "old", "_old", "mirror", "mirrors"}
 SCAN_MAX_DEPTH = 3

@@ -39,7 +39,9 @@ def ingest_assets(project, assets, machine="", base_path="", describe=True):
         path = a["path"].replace("\\", "/")
         existing = one("SELECT * FROM asset WHERE project_id=? AND (path=? OR path LIKE ?)", (project["id"], path, f"%/{path}"))
         fields = {"last_changed": a.get("last_changed"), "change_count": a.get("change_count"), "blob_hash": a.get("blob_hash") or "",
-                  "size": a.get("size"), "symbols": ",".join(a.get("symbols") or [])[:2000]}
+                  "size": a.get("size"), "symbols": ",".join(a.get("symbols") or [])[:2000],
+                  "imports": ",".join(a.get("imports") or [])[:1000], "func_hashes": json.dumps(a.get("func_hashes") or [])[:20000],
+                  "signatures": "\n".join(a.get("signatures") or [])[:6000]}
         if existing:
             if not existing["usage"] and a.get("usage"):
                 fields["usage"] = a["usage"]
@@ -109,7 +111,7 @@ def _attach_heads(repo, bare, assets):
 
 def link_shared_code(log=print):
     """Cross-project, cross-machine: identical blobs and >=50% overlapping symbol sets."""
-    rows = q("""SELECT a.path, a.blob_hash, a.symbols, p.name AS project FROM asset a JOIN project p ON p.id=a.project_id
+    rows = q("""SELECT a.path, a.blob_hash, a.symbols, a.func_hashes, p.name AS project FROM asset a JOIN project p ON p.id=a.project_id
                 WHERE p.origin='own' AND a.tags LIKE '%auto-discovered%'""")
     pairs = defaultdict(set)
     byblob = defaultdict(list)
@@ -131,8 +133,29 @@ def link_shared_code(log=print):
             if j >= 0.5:
                 a, b = sorted([pa, pb])
                 pairs[(a, b)].add(f"similar ({j:.0%} same functions): {fa} ~ {fb}")
+    # function level: the same normalized body in two different projects (renames and docstrings ignored)
+    byfunc = defaultdict(list)
+    for r in rows:
+        if not r["func_hashes"]:
+            continue
+        try:
+            for f in json.loads(r["func_hashes"]):
+                if f.get("lines", 0) >= 8:
+                    byfunc[f["hash"]].append((r["project"], r["path"], f["name"], f["lines"]))
+        except ValueError:
+            pass
+    for hits in byfunc.values():
+        projs = sorted({h[0] for h in hits})
+        if len(projs) < 2:
+            continue
+        for i, a in enumerate(projs):
+            for b in projs[i + 1:]:
+                ha = next(h for h in hits if h[0] == a); hb = next(h for h in hits if h[0] == b)
+                if any(n.startswith("identical:") and Path(ha[1]).name in n for n in pairs[(a, b)]):
+                    continue  # whole file already reported
+                pairs[(a, b)].add(f"function {ha[2]} ({ha[3]} lines): {ha[1]} = {hb[1]}" + (f" as {hb[2]}" if hb[2] != ha[2] else ""))
     with tx() as c:
-        c.execute("DELETE FROM link WHERE relation='shares-code-with' AND note LIKE 'identical:%' OR (relation='shares-code-with' AND note LIKE 'similar (%')")
+        c.execute("DELETE FROM link WHERE relation='shares-code-with' AND (note LIKE 'identical:%' OR note LIKE 'similar (%' OR note LIKE 'function %')")
     n = 0
     for (a, b), files in pairs.items():
         pa, pb = get_project(a), get_project(b)

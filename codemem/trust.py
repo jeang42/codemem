@@ -114,7 +114,8 @@ def compute_projects(grades, units, log=print):
             deployed = 100 if any(Path(a["path"]).name in units for a in svc if a["path"]) else 0
         incoming = one("""SELECT count(*) n FROM link WHERE (to_kind='project' AND to_id=? AND relation IN ('uses','could-reuse','derived-from','shares-code-with'))
                           OR (from_kind='project' AND from_id=? AND relation='shares-code-with')""", (p["id"], p["id"]))["n"]
-        reuse = min(100, 35 * incoming)
+        cross_imports = one("SELECT COALESCE(sum(imported_by),0) AS n FROM asset WHERE project_id=?", (p["id"],))["n"]
+        reuse = min(100, 35 * incoming + 25 * cross_imports)
         superseded = one("SELECT count(*) n FROM link WHERE to_kind='project' AND to_id=? AND relation='supersedes'", (p["id"],))["n"] > 0
         review = grades.get(p["name"])
         score, br = weighted({"freshness": (fresh, 30), "activity": (activity, 15), "hygiene": (hyg, 15),
@@ -131,9 +132,35 @@ def compute_projects(grades, units, log=print):
     return n
 
 
+GENERIC_STEMS = {"config", "utils", "util", "main", "app", "server", "db", "database", "models", "model", "settings", "common",
+                 "helpers", "helper", "base", "core", "api", "cli", "test", "tests", "run", "setup", "client", "tools", "web", "ui",
+                 "constants", "types", "errors", "logger", "logging", "views", "routes", "schema", "schemas", "data", "io"}
+
+
+def imported_by_counts():
+    """asset id -> number of OTHER projects that import a module with that file's stem.
+    Generic stems are ignored: `import config` in another repo is not reuse of this repo's config.py."""
+    stem_projects = {}
+    for r in q("SELECT a.id, a.path, p.name AS project FROM asset a JOIN project p ON p.id=a.project_id WHERE a.path LIKE '%.py'"):
+        stem = Path(r["path"]).stem.lower()
+        if len(stem) >= 5 and stem not in GENERIC_STEMS:
+            stem_projects.setdefault(stem, []).append((r["id"], r["project"]))
+    importers = {}
+    for r in q("SELECT a.imports, p.name AS project FROM asset a JOIN project p ON p.id=a.project_id WHERE a.imports!=''"):
+        for mod in r["imports"].split(","):
+            if mod in stem_projects:
+                importers.setdefault(mod, set()).add(r["project"])
+    counts = {}
+    for stem, owners in stem_projects.items():
+        for aid, proj in owners:
+            counts[aid] = len(importers.get(stem, set()) - {proj})
+    return counts
+
+
 def compute_assets(units, log=print):
     n = 0
     updates = []
+    imported = imported_by_counts()
     ptrust = {r["id"]: r["trust"] for r in q("SELECT id, trust FROM project")}
     for a in q("SELECT * FROM asset"):
         fresh = freshness(a["last_changed"] or a["updated_at"], a["verified_at"])
@@ -147,13 +174,15 @@ def compute_assets(units, log=print):
             deployed = 100 if Path(a["path"]).name in units else 0
         human = 100 if "auto-discovered" not in tags else None   # a person chose to register it
         proj = ptrust.get(a["project_id"])
+        nimp = imported.get(a["id"])
+        reuse = min(100, 50 * nimp) if nimp is not None else None   # imported by 2+ other projects = fully reused
         score, br = weighted({"freshness": (fresh, 30), "churn": (churn, 15), "description": (desc, 10),
-                              "deployed": (deployed, 15), "curated": (human, 10), "project": (proj, 25)})
+                              "deployed": (deployed, 15), "curated": (human, 10), "reuse": (reuse, 10), "project": (proj, 25)})
         t = clamp(score, a["maturity"])
-        updates.append((t, json.dumps(br), a["id"]))
+        updates.append((t, json.dumps(br), nimp or 0, a["id"]))
         n += 1
     with tx() as c:
-        c.executemany("UPDATE asset SET trust=?, trust_breakdown=? WHERE id=?", updates)
+        c.executemany("UPDATE asset SET trust=?, trust_breakdown=?, imported_by=? WHERE id=?", updates)
     return n
 
 
