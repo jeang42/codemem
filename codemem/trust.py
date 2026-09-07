@@ -90,6 +90,7 @@ def clamp(score, maturity, status=""):
 
 def compute_projects(grades, units, log=print):
     n = 0
+    updates = []
     for p in q("SELECT * FROM project"):
         locs = q("SELECT * FROM location WHERE project_id=?", (p["id"],))
         last = max([p["last_commit"] or ""] + [l["last_local_commit"] or "" for l in locs]) or None
@@ -123,14 +124,16 @@ def compute_projects(grades, units, log=print):
         if p["origin"] == "vendor":
             br["vendor"] = True
         t = clamp(score, p["maturity"], p["status"])
-        with tx() as c:
-            c.execute("UPDATE project SET trust=?, trust_breakdown=? WHERE id=?", (t, json.dumps(br), p["id"]))
+        updates.append((t, json.dumps(br), p["id"]))
         n += 1
+    with tx() as c:
+        c.executemany("UPDATE project SET trust=?, trust_breakdown=? WHERE id=?", updates)
     return n
 
 
 def compute_assets(units, log=print):
     n = 0
+    updates = []
     ptrust = {r["id"]: r["trust"] for r in q("SELECT id, trust FROM project")}
     for a in q("SELECT * FROM asset"):
         fresh = freshness(a["last_changed"] or a["updated_at"], a["verified_at"])
@@ -147,9 +150,10 @@ def compute_assets(units, log=print):
         score, br = weighted({"freshness": (fresh, 30), "churn": (churn, 15), "description": (desc, 10),
                               "deployed": (deployed, 15), "curated": (human, 10), "project": (proj, 25)})
         t = clamp(score, a["maturity"])
-        with tx() as c:
-            c.execute("UPDATE asset SET trust=?, trust_breakdown=? WHERE id=?", (t, json.dumps(br), a["id"]))
+        updates.append((t, json.dumps(br), a["id"]))
         n += 1
+    with tx() as c:
+        c.executemany("UPDATE asset SET trust=?, trust_breakdown=? WHERE id=?", updates)
     return n
 
 
