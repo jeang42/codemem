@@ -10,8 +10,11 @@ scan_payload() produces the same JSON the remote agent (client/codemem_agent.py)
 import os, subprocess
 from collections import Counter
 from pathlib import Path
+import re
 from . import config
 from .db import now, one, q, tx
+# package-manager caches that look like projects: com.unity.burst@f7a407abf4d5, org.foo.bar@1.2.3
+VENDOR_NAME = re.compile(r"^(com|org|net|io)\.[a-z0-9-]+\..+@[0-9a-f.]+$", re.I)
 from .store import upsert_project, upsert_location, project_name_from_remote, get_project, is_vendor_remote, is_local_remote
 
 MARKERS = {"pyproject.toml", "setup.py", "requirements.txt", "package.json", "Cargo.toml", "go.mod",
@@ -132,7 +135,7 @@ def ingest_scan(payload):
             fields["github_url"] = remote.removesuffix(".git")
         elif remote:
             fields["remote_url"] = remote
-        if is_vendor_remote(remote):
+        if is_vendor_remote(remote) or VENDOR_NAME.match(d["name"]):
             fields["origin"] = "vendor"  # someone else's repo cloned here; never treated as our own work
         if not existed and d.get("readme_head"):
             # first line of the README that is not a heading, badge, or the bare project name

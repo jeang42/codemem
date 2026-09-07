@@ -27,7 +27,8 @@ URL = os.environ.get("CODEMEM_URL", "http://localhost:8055").rstrip("/")
 MACHINE = os.environ.get("CODEMEM_MACHINE", socket.gethostname().split(".")[0])
 SKIP = {".git", "node_modules", "venv", ".venv", "env", "__pycache__", ".cache", "dist", "build", ".next",
         "site-packages", ".tox", "target", ".idea", ".vscode", "checkpoints", "models", "outputs", "output", "data",
-        "backup", "backups", "archive", "archives", "old", "_old", "mirror", "mirrors"}
+        "backup", "backups", "archive", "archives", "old", "_old", "mirror", "mirrors",
+        "PackageCache", "Library", "Temp", "Logs", "obj", "bin", ".godot", ".import"}
 MARKERS = ["pyproject.toml", "setup.py", "requirements.txt", "package.json", "Cargo.toml", "go.mod", "CMakeLists.txt",
            "Makefile", "docker-compose.yml", "compose.yml", "Dockerfile", "CLAUDE.md", "project.godot", "pom.xml", "build.gradle"]
 KEY = ["CLAUDE.md", "README.md", "Dockerfile", "docker-compose.yml", "compose.yml", "requirements.txt", "pyproject.toml",
