@@ -24,6 +24,8 @@ def main(argv=None):
     sub.add_parser("sync", help="docs + gitea + scan + embed: the timer job")
     d = sub.add_parser("describe", help="draft descriptions for own projects that lack one (Ollama, tagged auto-described)")
     d.add_argument("--dry-run", action="store_true")
+    dc = sub.add_parser("discover", help="mine own repos for reusable assets (tagged auto-discovered) and shared code links")
+    dc.add_argument("repos", nargs="*"); dc.add_argument("--no-describe", action="store_true", help="skip model drafts for files without a docstring")
     sub.add_parser("stats")
     a = ap.parse_args(argv)
 
@@ -62,9 +64,13 @@ def main(argv=None):
         print("gitea"); gitea_sync()
         print("backfill (catches anything the hook missed)"); backfill(log=lambda *_: None)
         print("scan"); print(" ", scan_local())
+        from .discover import discover
+        print("discover"); print(" ", discover(describe=True, log=lambda *_: None))
         print("embed"); 
         while embed_pending(): pass
         print("done")
+    elif a.cmd == "discover":
+        from .discover import discover; print(discover(a.repos or None, describe=not a.no_describe))
     elif a.cmd == "describe":
         from .describe import describe_all; print(f"{describe_all(dry=a.dry_run)} described")
     elif a.cmd == "stats":

@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS asset (
   name TEXT NOT NULL, kind TEXT NOT NULL, path TEXT DEFAULT '', machine TEXT DEFAULT '',
   description TEXT DEFAULT '', usage TEXT DEFAULT '', tags TEXT DEFAULT '',
   maturity TEXT DEFAULT '', maturity_note TEXT DEFAULT '',
+  last_changed TEXT, change_count INTEGER, blob_hash TEXT DEFAULT '', size INTEGER,
   created_at TEXT, updated_at TEXT, UNIQUE(name, kind));
 CREATE TABLE IF NOT EXISTS note (
   id INTEGER PRIMARY KEY, project_id INTEGER REFERENCES project(id) ON DELETE SET NULL,
@@ -99,6 +100,9 @@ def _migrate(c):
         for col in ("maturity", "maturity_note"):
             if col not in cols(table):
                 c.execute(f'ALTER TABLE "{table}" ADD COLUMN {col} TEXT DEFAULT \'\'')
+    for col, typ in (("last_changed", "TEXT"), ("change_count", "INTEGER"), ("blob_hash", "TEXT DEFAULT ''"), ("size", "INTEGER")):
+        if col not in cols("asset"):
+            c.execute(f"ALTER TABLE asset ADD COLUMN {col} {typ}")
     if "origin" not in cols("project"):
         c.execute("ALTER TABLE project ADD COLUMN origin TEXT DEFAULT 'own'")
     # 2026-09-06: the default audience label changed from 'personal' to 'unrestricted' (see docs/USER_GUIDE.md).
