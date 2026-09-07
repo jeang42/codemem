@@ -133,6 +133,7 @@ HELP = """codemem: memory for every coding project on every machine. Web UI http
 
 WORKFLOW
   start of a task   search("what you are about to build")  and  find_assets("...")   -> reuse before rebuilding
+  who uses a lib    find_assets(imports="chromadb")   -> exact, from parsed imports
   need a procedure  howto("publish") / howto("add machine") / howto() lists all
   about a project   project_brief("name" or "/path")
   built something   register_asset(name, kind, description, usage, project)   usage = the one line to reuse it
@@ -290,9 +291,18 @@ def register_asset(name: str = "", kind: str = "", description: str = "", usage:
 
 @mcp.tool()
 def find_assets(query: str = "", kind: str = "", tag: str = "", project: str = "", exclude_audience: str = "",
-                exclude_maturity: str = "", limit: int = 20) -> dict:
+                exclude_maturity: str = "", limit: int = 20, imports: str = "") -> dict:
     """Find reusable assets. With a query it searches; without, it lists (optionally by kind, tag, project).
-    exclude_maturity="junk,broken,sunset,antiquated" leaves only things worth building on."""
+    exclude_maturity="junk,broken,sunset,antiquated" leaves only things worth building on.
+    imports="chromadb" answers "which files/projects use this library" exactly, from parsed import statements."""
+    if imports.strip():
+        mod = imports.strip().split(".")[0]
+        rows = q("""SELECT a.id, a.name, a.kind, a.path, a.machine, a.trust, a.maturity, p.name AS project, p.audience
+                    FROM asset a JOIN project p ON p.id=a.project_id
+                    WHERE (',' || a.imports || ',') LIKE ? ORDER BY p.name, a.path LIMIT ?""", (f"%,{mod},%", limit * 10))
+        ex = _aud(exclude_audience) or []
+        rows = [r for r in rows if r["audience"] not in ex]
+        return {"imports": mod, "projects": sorted({r["project"] for r in rows}), "assets": rows[:limit]}
     if query.strip():
         r = S.search(query, ["asset"], project or None, limit, exclude_audience=_aud(exclude_audience),
                      exclude_maturity=_aud(exclude_maturity))
@@ -625,7 +635,7 @@ async def api_asset_patch(request: Request):
 async def api_assets(request: Request):
     qp = request.query_params
     return JSONResponse(find_assets(qp.get("q", ""), qp.get("kind", ""), qp.get("tag", ""), qp.get("project", ""),
-                                    qp.get("exclude_audience", ""), qp.get("exclude_maturity", ""), 500))
+                                    qp.get("exclude_audience", ""), qp.get("exclude_maturity", ""), 500, qp.get("imports", "")))
 
 
 @mcp.custom_route("/api/notes", methods=["GET"])
