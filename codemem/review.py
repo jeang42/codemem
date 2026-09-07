@@ -68,7 +68,7 @@ def function_source(text, name):
 # ---- stage 1 -----------------------------------------------------------------
 
 def near_duplicate_candidates(limit):
-    rows = q("""SELECT a.id, a.name, a.path, a.func_hashes, a.machine, a.blob_hash, a.project_id, p.name AS project
+    rows = q("""SELECT a.*, p.name AS project
                 FROM asset a JOIN project p ON p.id=a.project_id WHERE p.origin='own' AND a.func_hashes NOT IN ('', '[]')""")
     byname = {}
     for r in rows:
