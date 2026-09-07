@@ -19,8 +19,9 @@ if (Get-Command claude -ErrorAction SilentlyContinue) {
 $settings = Join-Path $env:USERPROFILE ".claude\settings.json"
 $s = if (Test-Path $settings) { Get-Content $settings -Raw | ConvertFrom-Json -AsHashtable } else { @{} }
 if (-not $s.hooks) { $s.hooks = @{} }
+# No shell syntax: the hook defaults to the server URL itself, so this runs the same under cmd, PowerShell or Git Bash.
 $hook = "$Dest\codemem_hook.py".Replace("\", "/")
-$cmd  = "set CODEMEM_URL=$Url&& python `"$hook`""
+$cmd  = "python `"$hook`""
 foreach ($ev in "SessionStart","SessionEnd") {
     $list = @($s.hooks[$ev] | Where-Object { ($_ | ConvertTo-Json -Depth 5) -notmatch "codemem_hook" })
     $list += @{ matcher = ""; hooks = @(@{ type = "command"; command = $cmd; timeout = 10 }) }
