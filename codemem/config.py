@@ -16,6 +16,11 @@ GITEA_TOKEN_FILE = Path(os.environ.get("GITEA_TOKEN_FILE", GIT_ROOT / ".gitea-to
 
 # GitHub/GitLab owners that are YOU. A clone whose remote owner is not listed here is vendor code.
 OWN_REMOTE_OWNERS = {o.strip().lower() for o in os.environ.get("CODEMEM_OWN_OWNERS", "").split(",") if o.strip()}
+# Names/paths that must never enter codemem (CODEMEM_EXCLUDE). Matched as a whole path segment or
+# name token, case-insensitive, against project names, remotes and scan paths. Purge existing rows with
+# `codemem purge <project>`.
+EXCLUDE_PATTERN = os.environ.get("CODEMEM_EXCLUDE", "")
+
 # Default audience for new projects. "unrestricted" = personal, no content filtering applied.
 DEFAULT_AUDIENCE = os.environ.get("CODEMEM_DEFAULT_AUDIENCE", "unrestricted")
 

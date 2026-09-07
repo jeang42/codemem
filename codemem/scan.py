@@ -15,7 +15,7 @@ from . import config
 from .db import now, one, q, tx
 # package-manager caches that look like projects: com.unity.burst@f7a407abf4d5, org.foo.bar@1.2.3
 VENDOR_NAME = re.compile(r"^(com|org|net|io)\.[a-z0-9-]+\..+@[0-9a-f.]+$", re.I)
-from .store import upsert_project, upsert_location, project_name_from_remote, get_project, is_vendor_remote, is_local_remote
+from .store import upsert_project, upsert_location, project_name_from_remote, get_project, is_vendor_remote, is_local_remote, is_excluded
 
 MARKERS = {"pyproject.toml", "setup.py", "requirements.txt", "package.json", "Cargo.toml", "go.mod",
            "CMakeLists.txt", "Makefile", "docker-compose.yml", "compose.yml", "Dockerfile", "CLAUDE.md",
@@ -121,13 +121,16 @@ def scan_payload(roots, machine=config.MACHINE):
 def ingest_scan(payload):
     """Import a scan payload (local or posted by a remote agent). Returns counts."""
     machine = payload.get("machine") or "unknown"
-    created = updated = 0
+    created = updated = excluded = 0
     asset_stats = {}
     for d in payload.get("projects", []):
         remote = d.get("remote_url") or ""
         if is_local_remote(remote):
             remote = ""   # a clone of a local path (backup mirror, L:/..., file://) says nothing about the project's home
         name = project_name_from_remote(remote) or d["name"]
+        if is_excluded(name, d.get("path"), remote):
+            excluded += 1
+            continue   # excluded names never enter, whatever machine posts it
         existed = get_project(name) is not None
         primary_langs = ",".join(x.split(":")[0] for x in (d.get("languages") or "").split(",") if x)
         fields = {"languages": primary_langs}
@@ -161,7 +164,7 @@ def ingest_scan(payload):
             c.execute("""INSERT INTO scan_root(machine, path, last_scanned) VALUES (?,?,?)
                          ON CONFLICT(machine, path) DO UPDATE SET last_scanned=excluded.last_scanned""",
                       (machine, r, now()))
-    out = {"machine": machine, "projects": len(payload.get("projects", [])), "created": created, "updated": updated}
+    out = {"machine": machine, "projects": len(payload.get("projects", [])), "created": created, "updated": updated, "excluded": excluded}
     if asset_stats:
         from .discover import link_shared_code
         from .trust import compute_all

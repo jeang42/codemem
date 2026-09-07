@@ -1,7 +1,38 @@
 """Write-side helpers. Every mutation goes through here so the search index stays in step."""
 import json, os, re
-from . import db
+from . import db, config
 from .db import tx, q, one, now, index_item, tags_norm
+
+
+_EXCLUDE = re.compile(config.EXCLUDE_PATTERN, re.I) if config.EXCLUDE_PATTERN else None
+
+
+def is_excluded(*strings):
+    """True if any of the given names/paths hits the exclusion pattern (CODEMEM_EXCLUDE)."""
+    return bool(_EXCLUDE) and any(_EXCLUDE.search(str(s)) for s in strings if s)
+
+
+def purge_project(name):
+    """Remove a project and everything hanging off it: locations, assets, notes, commits, links, index rows."""
+    p = get_project(name)
+    if not p:
+        return {"error": f"no project {name!r}"}
+    pid = p["id"]
+    counts = {}
+    with tx() as c:
+        for table, col in (("location", "project_id"), ("asset", "project_id"), ("note", "project_id"), ('"commit"', "project_id")):
+            kind = table.strip('"')
+            ids = [r["id"] for r in c.execute(f"SELECT id FROM {table} WHERE {col}=?", (pid,)).fetchall()]
+            for i in ids:
+                db.unindex(c, kind, i)
+            c.execute(f"DELETE FROM {table} WHERE {col}=?", (pid,))
+            counts[kind] = len(ids)
+        c.execute("DELETE FROM link WHERE (from_kind='project' AND from_id=?) OR (to_kind='project' AND to_id=?)", (pid, pid))
+        c.execute("DELETE FROM scan_root WHERE path LIKE ?", (f"%{name}%",))
+        db.unindex(c, "project", pid)
+        c.execute("DELETE FROM project WHERE id=?", (pid,))
+    counts["project"] = name
+    return counts
 
 
 def is_local_remote(url):

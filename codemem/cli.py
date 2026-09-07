@@ -30,6 +30,8 @@ def main(argv=None):
     rv.add_argument("--stage", type=int, choices=[1, 2], default=0, help="run one stage only (default both)")
     rv.add_argument("--limit", type=int, default=40); rv.add_argument("--dry-run", action="store_true")
     rv.add_argument("--machine", default="", help="stage 2: review every Python asset from this machine (source shipped by its agent)")
+    pg = sub.add_parser("purge", help="remove a project and everything attached to it (locations, assets, notes, commits, links)")
+    pg.add_argument("names", nargs="+")
     sub.add_parser("trust", help="recompute trust scores for all projects and assets")
     sub.add_parser("stats")
     a = ap.parse_args(argv)
@@ -83,6 +85,9 @@ def main(argv=None):
         if a.stage in (0, 1): stage1(a.limit, a.dry_run)
         if a.stage in (0, 2): stage2(a.limit, a.dry_run, machine=a.machine)
         from .trust import compute_all; compute_all()
+    elif a.cmd == "purge":
+        from .store import purge_project
+        for n in a.names: print(purge_project(n))
     elif a.cmd == "trust":
         from .trust import compute_all; compute_all()
     elif a.cmd == "describe":

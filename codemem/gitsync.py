@@ -8,7 +8,7 @@ import json, subprocess, urllib.request
 from pathlib import Path
 from . import config
 from .db import q, one, tx, now, index_item
-from .store import upsert_project, get_project
+from .store import upsert_project, get_project, is_excluded
 
 ZERO = "0" * 40
 FMT = "%H%x1f%an%x1f%aI%x1f%B%x1e"
@@ -19,7 +19,7 @@ def _git(repo, *args):
 
 
 def repo_names():
-    return sorted(p.name[:-4] for p in config.GIT_ROOT.glob("*.git") if p.is_dir())
+    return sorted(p.name[:-4] for p in config.GIT_ROOT.glob("*.git") if p.is_dir() and not is_excluded(p.name[:-4]))
 
 
 def _log_commits(repo, *range_args):
@@ -106,6 +106,8 @@ def ingest_push(repo, ref, old, new, who="", from_ip=""):
     path = config.GIT_ROOT / f"{name}.git"
     if not path.is_dir():
         return {"error": f"no such repo {name}"}
+    if is_excluded(name):
+        return {"repo": name, "excluded": True, "added": 0}
     p = _project_for_repo(name)
     if new == ZERO:
         return {"repo": name, "ref": ref, "deleted": True, "added": 0}
@@ -175,6 +177,8 @@ def gitea_sync(log=print):
             break
         for rp in repos:
             name = rp["name"]
+            if is_excluded(name):
+                continue
             url = f"{config.GITEA_PUBLIC_URL}/{rp['owner']['login']}/{name}"
             topics = ",".join(rp.get("topics") or [])
             p = get_project(name)
