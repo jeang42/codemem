@@ -17,11 +17,16 @@ import json, os, socket, subprocess, sys, time, urllib.parse, urllib.request
 from collections import Counter
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+_here = Path(__file__).resolve().parent
+sys.path.insert(0, str(_here))
 try:
-    import codemem_discover as D
+    import codemem_discover as D            # installed copy (~/.codemem)
 except ImportError:
-    D = None
+    try:
+        sys.path.insert(0, str(_here.parent / "codemem"))
+        import discover_core as D           # running from a repo checkout
+    except ImportError:
+        D = None
 
 URL = os.environ.get("CODEMEM_URL", "http://localhost:8055").rstrip("/")
 MACHINE = os.environ.get("CODEMEM_MACHINE", socket.gethostname().split(".")[0])
