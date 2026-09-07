@@ -13,7 +13,8 @@ machines, and rescores trust.
 
 Needs codemem_discover.py beside it (the installer puts it there). Config: CODEMEM_URL, CODEMEM_MACHINE.
 """
-import json, os, socket, subprocess, sys, time, urllib.parse, urllib.request
+import json, os, socket, subprocess, sys, time, urllib.parse, urllib.request, warnings
+warnings.simplefilter("ignore", SyntaxWarning)
 from collections import Counter
 from pathlib import Path
 

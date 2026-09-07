@@ -4,7 +4,8 @@
 Given a project directory (or a bare repo), yields asset dicts:
   path, kind, description, usage, symbols, last_changed, change_count, blob_hash, size
 """
-import ast, hashlib, os, re, subprocess
+import ast, hashlib, os, re, subprocess, warnings
+warnings.simplefilter("ignore", SyntaxWarning)   # parsing other people's escape sequences is not our problem
 from pathlib import Path
 
 MIN_FUNC_LINES = 6   # smaller functions are boilerplate and match by accident
