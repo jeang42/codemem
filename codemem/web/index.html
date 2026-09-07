@@ -29,6 +29,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px 8px;
 .note{border-left:3px solid var(--accent);padding-left:10px;margin:10px 0}.note.session-auto{border-color:var(--muted)}
 .dirty{color:var(--warn)}
 .mat{display:inline-block;border-radius:4px;padding:0 6px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;color:#fff;background:var(--muted)}
+.tr{display:inline-block;border-radius:4px;padding:0 6px;font-size:11px;font-weight:600;color:#fff;background:#6b7280}.tr.hi{background:#15803d}.tr.mid{background:#a16207}.tr.lo{background:#b91c1c}
 .mat.authoritative{background:#15803d}.mat.usable{background:#2563eb}.mat.experimental{background:#7c3aed}.mat.antiquated{background:#a16207}.mat.sunset{background:#c2410c}.mat.broken{background:#b91c1c}.mat.junk{background:#525252}details summary{cursor:pointer}
 .md p{margin:.4em 0}
 </style>
@@ -59,6 +60,10 @@ $('#theme').onclick=()=>{const dark=root.dataset.theme==='dark'||(!root.dataset.
 $('#exclude').onchange=e=>{try{localStorage.setItem('exclude',e.target.value)}catch(_){}route()};
 const ex=()=>{const v=$('#exclude').value.trim(),m=$('#exmat').value.trim();return (v?'&exclude_audience='+encodeURIComponent(v):'')+(m?'&exclude_maturity='+encodeURIComponent(m):'')+($('#vendor').checked?'&include_vendor=1&origin=all':'')};
 const mat=(m,note)=>m?`<span class="mat ${esc(m)}" title="${esc(note||'')}">${esc(m)}</span>`:'';
+const trust=(r)=>{if(r==null||r.trust==null)return '';let b={};try{b=JSON.parse(r.trust_breakdown||'{}')}catch(e){}
+  const tip=Object.entries(b).map(([k,v])=>v===true?`[${k}]`:`${k} ${v}`).join(', ')+(r.verified_at?` · verified ${d10(r.verified_at)}`:'');
+  return `<span class="tr ${r.trust>=70?'hi':r.trust>=40?'mid':'lo'}" title="${esc(tip)}">trust ${r.trust}</span>`};
+async function doVerify(name,kind){const note=prompt('What did you check? (optional)')||'';await fetch('/api/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,asset_kind:kind||'',note})});route()}
 const matSel=(name,cur)=>`<select name="${name}"><option value="">unrated</option>${MATS.map(x=>`<option ${x===cur?'selected':''}>${x}</option>`).join('')}</select>`;
 const api=async(p)=>{const r=await fetch('/api'+p);if(!r.ok)throw new Error(r.status);return r.json()};
 const chips=t=>(t||'').split(',').filter(Boolean).map(x=>`<span class="chip">${esc(x)}</span>`).join('');
@@ -70,7 +75,7 @@ const V={
  async home(){const s=await api('/stats');$('#machine').textContent=s.machine+':'+s.port;
   const a=await api('/activity?days=7'+ex());
   return `<div>${['projects','assets','notes','commits','docs','links'].map(k=>`<span class="stat"><b>${s[k]}</b>${k}</span>`).join('')}
-  <span class="stat"><b>${s.embedded_rows}/${s.index_rows}</b>embedded</span><span class="stat"><b>${s.machines.length}</b>machines: ${esc(s.machines.join(', '))}</span></div>
+  <span class="stat"><b>${s.embedded_rows}/${s.index_rows}</b>embedded</span><span class="stat"><b>${(s.trust||[]).map(x=>x.n+' '+x.band.split(' ')[0]).join(' / ')}</b>trust (own projects)</span><span class="stat"><b>${s.machines.length}</b>machines: ${esc(s.machines.join(', '))}</span></div>
   <div class="two"><div class="card"><h3>Commits, last 7 days</h3>${tbl(a.commits.slice(0,25),['date','project','message','pushed_from'])}</div>
   <div class="card"><h3>Sessions & notes, last 7 days</h3>${a.notes.slice(0,25).map(n=>noteHtml(n)).join('')||'<p class="muted">none yet</p>'}</div></div>
   <div class="card" style="margin-top:14px"><h3>Scan roots</h3>${tbl(s.scan_roots,['machine','path','enabled','last_scanned'])}
@@ -79,11 +84,12 @@ const V={
   return `<div class="row"><select id="f_status" onchange="route()"><option value="">any status</option>${['active','paused','done','abandoned','archived'].map(x=>`<option ${x===st?'selected':''}>${x}</option>`).join('')}</select>
   <select id="f_mat" onchange="route()"><option value="">any maturity</option>${MATS.map(x=>`<option ${x===fm?'selected':''}>${x}</option>`).join('')}</select>
   <input id="f_tag" placeholder="tag" value="${esc(tag)}" onchange="route()"><span class="muted">${r.count} projects</span></div>
-  <div class="grid">${r.projects.map(p=>`<div class="card"><h3><a href="#/project/${encodeURIComponent(p.name)}">${esc(p.name)}</a> ${mat(p.maturity,p.maturity_note)} ${p.origin==='vendor'?'<span class="chip">vendor</span>':''}</h3>
+  <div class="grid">${r.projects.map(p=>`<div class="card"><h3><a href="#/project/${encodeURIComponent(p.name)}">${esc(p.name)}</a> ${mat(p.maturity,p.maturity_note)} ${trust(p)} ${p.origin==='vendor'?'<span class="chip">vendor</span>':''}</h3>
   <div class="muted">${esc(p.status)} · ${esc(p.audience)} · ${p.commit_count||0} commits${p.last_commit?' · '+d10(p.last_commit):''}</div>
   <div>${esc(p.description||'').slice(0,160)}</div><div>${chips(p.tags)}${chips(p.languages)}</div></div>`).join('')}</div>`},
  async project(name){const b=await api('/project/'+encodeURIComponent(name));const p=b.project;
-  return `<h2>${esc(p.name)} ${mat(p.maturity,p.maturity_note)} ${p.origin==='vendor'?'<span class="chip">vendor clone</span>':''} <span class="muted">${esc(p.status)} · ${esc(p.audience)}</span></h2>${p.maturity_note?`<p class="muted">${esc(p.maturity_note)}</p>`:''}
+  return `<h2>${esc(p.name)} ${mat(p.maturity,p.maturity_note)} ${trust(p)} ${p.origin==='vendor'?'<span class="chip">vendor clone</span>':''} <span class="muted">${esc(p.status)} · ${esc(p.audience)}</span> <button onclick="doVerify('${esc(p.name)}')" title="I ran it today and it works">verified today</button></h2>
+  ${p.trust!=null?`<p class="muted">trust breakdown: ${esc(Object.entries(JSON.parse(p.trust_breakdown||'{}')).map(([k,v])=>v===true?`[${k}]`:`${k} ${v}`).join(' · '))}${p.verified_at?' · verified '+d10(p.verified_at)+(p.verified_note?' ('+esc(p.verified_note)+')':''):''}</p>`:''}${p.maturity_note?`<p class="muted">${esc(p.maturity_note)}</p>`:''}
   <div class="two"><div><div class="card"><h3>About</h3><p>${esc(p.description)||'<span class="muted">no description</span>'}</p>${p.purpose?`<p><b>Purpose:</b> ${esc(p.purpose)}</p>`:''}
   <div>${chips(p.tags)}</div><p class="muted">languages: ${esc(p.languages)}<br>${p.remote_url?`git: <code>${esc(p.remote_url)}</code><br>`:''}${p.gitea_url?`<a href="${esc(p.gitea_url)}" target="_blank">gitea</a> `:''}${p.github_url?`<a href="${esc(p.github_url)}" target="_blank">github</a>`:''}</p>
   <details><summary>edit</summary><form onsubmit="return saveProject(event,'${esc(p.name)}')">
@@ -97,10 +103,10 @@ const V={
   <div class="card"><h3>Commits (${p.commit_count||0})</h3><div class="wrap">${tbl(b.commits,['date','hash','message','author','pushed_from'])}</div></div></div></div>`},
  async assets(){const k=$('#f_kind')?.value||'',tg=$('#f_atag')?.value||'',pj=$('#f_aproj')?.value||'',so=$('#f_asort')?.value||'updated';
   const r=await api(`/assets?kind=${k}&tag=${encodeURIComponent(tg)}&project=${encodeURIComponent(pj)}${ex()}`);const kinds=[...new Set(r.assets.map(a=>a.kind))].sort();
-  const rows=r.assets.slice().sort((a,b)=>so==='changed'?String(b.last_changed||'').localeCompare(String(a.last_changed||'')):so==='churn'?(b.change_count||0)-(a.change_count||0):so==='name'?a.name.localeCompare(b.name):0);
+  const rows=r.assets.slice().sort((a,b)=>so==='changed'?String(b.last_changed||'').localeCompare(String(a.last_changed||'')):so==='churn'?(b.change_count||0)-(a.change_count||0):so==='trust'?(b.trust??-1)-(a.trust??-1):so==='name'?a.name.localeCompare(b.name):0);
   return `<div class="row"><select id="f_kind" onchange="route()"><option value="">any kind</option>${kinds.map(x=>`<option ${x===k?'selected':''}>${x}</option>`).join('')}</select>
   <input id="f_atag" placeholder="tag (auto-discovered, …)" value="${esc(tg)}" onchange="route()"><input id="f_aproj" placeholder="project" value="${esc(pj)}" onchange="route()">
-  <select id="f_asort" onchange="route()">${[['updated','recently updated'],['changed','last code change'],['churn','most commits'],['name','name']].map(([v,l])=>`<option value="${v}" ${v===so?'selected':''}>${l}</option>`).join('')}</select>
+  <select id="f_asort" onchange="route()">${[['updated','recently updated'],['trust','trust'],['changed','last code change'],['churn','most commits'],['name','name']].map(([v,l])=>`<option value="${v}" ${v===so?'selected':''}>${l}</option>`).join('')}</select>
   <span class="muted">${rows.length} assets</span></div><div class="grid">${rows.map(a=>`<div class="card">${assetHtml(a)}</div>`).join('')}</div>`},
  async notes(){const k=$('#f_nkind')?.value||'';const r=await api(`/notes?kind=${k}${ex()}`);
   return `<div class="row"><select id="f_nkind" onchange="route()"><option value="">any kind</option>${['session','session-auto','decision','howto','resource','issue','idea','note'].map(x=>`<option ${x===k?'selected':''}>${x}</option>`).join('')}</select><span class="muted">${r.notes.length} notes</span></div>${r.notes.map(noteHtml).join('')}`},
@@ -116,8 +122,8 @@ const V={
    return `<div class="card" style="margin-bottom:8px"><span class="kind">${x.kind}</span> ${mat(rec.maturity||rec.effective_maturity,rec.maturity_note)} ${rec.project&&x.kind!=='project'?`<a class="muted" href="#/project/${encodeURIComponent(rec.project)}">${esc(rec.project)}</a>`:''}<h3>${title}</h3><div>${body}</div></div>`}).join('')}`}
 };
 function tbl(rows,cols,raw){if(!rows?.length)return '<p class="muted">none</p>';return `<table><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr>${rows.map(r=>`<tr>${cols.map(c=>{let v=r[c];if(c==='date'||c==='last_scanned')v=d10(v);if(c==='hash')v=`<code>${esc(String(v).slice(0,8))}</code>`;else if(c==='project')v=`<a href="#/project/${encodeURIComponent(v)}">${esc(v)}</a>`;else if(!raw||c!=='title')v=esc(v);return `<td>${v??''}</td>`}).join('')}</tr>`).join('')}</table>`}
-function assetHtml(a){return `<div><span class="kind">${esc(a.kind)}</span> <b>${esc(a.name)}</b> ${mat(a.maturity||a.effective_maturity,a.maturity_note)} ${a.project?`<a class="muted" href="#/project/${encodeURIComponent(a.project)}">${esc(a.project)}</a>`:''}<div>${esc(a.description)}</div>${a.usage?`<div><code>${esc(a.usage)}</code></div>`:''}<div class="muted">${esc(a.machine||'')}${a.path?':'+esc(a.path):''}${a.last_changed?' · changed '+d10(a.last_changed)+(a.change_count?' ('+a.change_count+' commits)':''):''}</div><div>${chips(a.tags)}</div>
-<details><summary class="muted">rate</summary><form onsubmit="return saveAsset(event,${a.id})">${matSel('maturity',a.maturity)} <input name="maturity_note" placeholder="why" value="${esc(a.maturity_note||'')}"> <button>save</button></form></details></div>`}
+function assetHtml(a){return `<div><span class="kind">${esc(a.kind)}</span> <b>${esc(a.name)}</b> ${mat(a.maturity||a.effective_maturity,a.maturity_note)} ${trust(a)} ${a.project?`<a class="muted" href="#/project/${encodeURIComponent(a.project)}">${esc(a.project)}</a>`:''}<div>${esc(a.description)}</div>${a.usage?`<div><code>${esc(a.usage)}</code></div>`:''}<div class="muted">${esc(a.machine||'')}${a.path?':'+esc(a.path):''}${a.last_changed?' · changed '+d10(a.last_changed)+(a.change_count?' ('+a.change_count+' commits)':''):''}</div><div>${chips(a.tags)}</div>
+<details><summary class="muted">rate</summary><form onsubmit="return saveAsset(event,${a.id})">${matSel('maturity',a.maturity)} <input name="maturity_note" placeholder="why" value="${esc(a.maturity_note||'')}"> <button>save</button> <button type="button" onclick="doVerify('${esc(a.name)}','${esc(a.kind)}')">verified today</button></form></details></div>`}
 async function saveAsset(e,id){e.preventDefault();const f=new FormData(e.target);const d={};for(const [k,v] of f)d[k]=v;await fetch('/api/asset/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});route();return false}
 function noteHtml(n){return `<div class="note ${esc(n.kind)}"><span class="kind">${esc(n.kind)}</span> <b>${esc(n.title)}</b> <span class="muted">${d10(n.created_at)} · ${esc(n.machine||'')}${n.project?' · <a href="#/project/'+encodeURIComponent(n.project)+'">'+esc(n.project)+'</a>':''}</span><details><summary class="muted">${esc((n.body||'').split('\n')[0].slice(0,140))}</summary><div class="md">${md(n.body)}</div></details>${chips(n.tags)}</div>`}
 async function saveProject(e,name){e.preventDefault();const f=new FormData(e.target);const d={};for(const [k,v] of f)d[k]=v;await fetch('/api/project/'+encodeURIComponent(name),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});route();return false}

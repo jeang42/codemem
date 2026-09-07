@@ -159,8 +159,17 @@ def search(query, kinds=None, project=None, limit=10, mode="hybrid", exclude_aud
     for rank, r in enumerate(sem):
         k = (r["kind"], r["ref_id"])
         fused[k] = fused.get(k, 0) + 1.0 / (60 + rank); mat[k] = r["maturity"] or ""
+    trust = {}
+    for kind, table in (("project", "project"), ("asset", "asset")):
+        ids = [ref for (kd, ref) in fused if kd == kind]
+        if ids:
+            for r in q(f"SELECT id, trust FROM {table} WHERE id IN ({','.join('?' * len(ids))})", ids):
+                trust[(kind, r["id"])] = r["trust"]
     for k in fused:
         fused[k] *= MATURITY_RANK.get(mat[k], 1.0)
+        t = trust.get(k)
+        if t is not None:
+            fused[k] *= 0.85 + 0.3 * t / 100   # trust is inferred: a milder nudge than maturity
     ordered = sorted(fused.items(), key=lambda kv: -kv[1])[:limit]
     out = []
     for (kind, ref_id), score in ordered:

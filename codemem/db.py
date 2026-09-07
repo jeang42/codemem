@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS project (
   id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL,
   description TEXT DEFAULT '', purpose TEXT DEFAULT '', status TEXT DEFAULT 'active',
   audience TEXT DEFAULT 'unrestricted', origin TEXT DEFAULT 'own', maturity TEXT DEFAULT '', maturity_note TEXT DEFAULT '',
+  trust INTEGER, trust_breakdown TEXT DEFAULT '', verified_at TEXT, verified_note TEXT DEFAULT '',
   tags TEXT DEFAULT '', languages TEXT DEFAULT '',
   remote_url TEXT DEFAULT '', gitea_url TEXT DEFAULT '', github_url TEXT DEFAULT '',
   first_commit TEXT, last_commit TEXT, commit_count INTEGER DEFAULT 0,
@@ -26,6 +27,7 @@ CREATE TABLE IF NOT EXISTS asset (
   description TEXT DEFAULT '', usage TEXT DEFAULT '', tags TEXT DEFAULT '',
   maturity TEXT DEFAULT '', maturity_note TEXT DEFAULT '',
   last_changed TEXT, change_count INTEGER, blob_hash TEXT DEFAULT '', size INTEGER,
+  trust INTEGER, trust_breakdown TEXT DEFAULT '', verified_at TEXT, verified_note TEXT DEFAULT '',
   created_at TEXT, updated_at TEXT, UNIQUE(name, kind));
 CREATE TABLE IF NOT EXISTS note (
   id INTEGER PRIMARY KEY, project_id INTEGER REFERENCES project(id) ON DELETE SET NULL,
@@ -103,6 +105,10 @@ def _migrate(c):
     for col, typ in (("last_changed", "TEXT"), ("change_count", "INTEGER"), ("blob_hash", "TEXT DEFAULT ''"), ("size", "INTEGER")):
         if col not in cols("asset"):
             c.execute(f"ALTER TABLE asset ADD COLUMN {col} {typ}")
+    for table in ("project", "asset"):
+        for col, typ in (("trust", "INTEGER"), ("trust_breakdown", "TEXT DEFAULT ''"), ("verified_at", "TEXT"), ("verified_note", "TEXT DEFAULT ''")):
+            if col not in cols(table):
+                c.execute(f'ALTER TABLE "{table}" ADD COLUMN {col} {typ}')
     if "origin" not in cols("project"):
         c.execute("ALTER TABLE project ADD COLUMN origin TEXT DEFAULT 'own'")
     # 2026-09-06: the default audience label changed from 'personal' to 'unrestricted' (see docs/USER_GUIDE.md).

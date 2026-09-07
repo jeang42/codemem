@@ -9,7 +9,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, HTMLResponse, PlainTextResponse
 from mcp.server.fastmcp import FastMCP
 
-from . import config, search as S, gitsync, scan as SC, knowledge
+from . import config, search as S, gitsync, scan as SC, knowledge, trust as T
 from .db import q, one, tx, now, connect, MATURITY
 from . import store
 from .store import (get_project, upsert_project, upsert_asset, add_link, upsert_scan_root,
@@ -55,7 +55,7 @@ def brief(project, days=30, limit_notes=8, limit_commits=10):
               (p["id"], limit_notes))
     commits = q('SELECT hash, author, date, substr(message,1,200) AS message, pushed_from FROM "commit" WHERE project_id=? ORDER BY date DESC LIMIT ?',
                 (p["id"], limit_commits))
-    assets = q("SELECT id, name, kind, path, machine, description, usage, tags, maturity, maturity_note FROM asset WHERE project_id=? ORDER BY updated_at DESC", (p["id"],))
+    assets = q("SELECT id, name, kind, path, machine, description, usage, tags, maturity, maturity_note, trust, trust_breakdown, verified_at, last_changed, change_count FROM asset WHERE project_id=? ORDER BY COALESCE(trust,0) DESC, updated_at DESC", (p["id"],))
     locations = q("SELECT machine, path, branch, dirty, last_local_commit, languages, key_files, last_scanned FROM location WHERE project_id=?", (p["id"],))
     links = q("""SELECT l.relation, l.note, l.from_kind, l.from_id, l.to_kind, l.to_id,
                         CASE l.from_kind WHEN 'project' THEN (SELECT name FROM project WHERE id=l.from_id) WHEN 'asset' THEN (SELECT name FROM asset WHERE id=l.from_id) ELSE '' END AS from_name,
@@ -63,6 +63,21 @@ def brief(project, days=30, limit_notes=8, limit_commits=10):
                  FROM link l WHERE (l.from_kind='project' AND l.from_id=?) OR (l.to_kind='project' AND l.to_id=?)""",
               (p["id"], p["id"]))
     return {"project": dict(p), "locations": locations, "assets": assets, "notes": notes, "commits": commits, "links": links}
+
+
+def _trust_words(rec):
+    try:
+        br = json.loads(rec.get("trust_breakdown") or "{}")
+    except ValueError:
+        return ""
+    parts = [f"{k} {v}" for k, v in br.items() if isinstance(v, int)]
+    flags = [k for k, v in br.items() if v is True]
+    s = "(" + ", ".join(parts) + ")" if parts else ""
+    if flags:
+        s += " " + " ".join(f"[{f}]" for f in flags)
+    if rec.get("verified_at"):
+        s += f" verified {rec['verified_at'][:10]}"
+    return s
 
 
 def brief_text(b):
@@ -75,6 +90,8 @@ def brief_text(b):
         out.append(f"Purpose: {p['purpose']}")
     if p.get("maturity"):
         out.append(f"**Maturity: {p['maturity']}**" + (f" ({p['maturity_note']})" if p.get("maturity_note") else ""))
+    if p.get("trust") is not None:
+        out.append(f"Trust {p['trust']}/100 " + _trust_words(p))
     meta = [f"status={p['status']}", f"audience={p['audience']}"] + (["VENDOR CLONE (not our code)"] if p.get("origin") == "vendor" else [])
     if p.get("tags"):
         meta.append(f"tags={p['tags']}")
@@ -87,7 +104,7 @@ def brief_text(b):
         out.append("Locations: " + "; ".join(f"{l['machine']}:{l['path']}" + (" (dirty)" if l["dirty"] else "") for l in b["locations"]))
     if b["assets"]:
         out.append("Reusable assets here:")
-        out += [f"- {a['name']} [{a['kind']}]" + (f" ({a['maturity']})" if a.get("maturity") else "") + f" {a['description']}" for a in b["assets"][:8]]
+        out += [f"- {a['name']} [{a['kind']}]" + (f" ({a['maturity']})" if a.get("maturity") else "") + (f" trust {a['trust']}" if a.get("trust") is not None else "") + f" {a['description'][:120]}" for a in b["assets"][:8]]
     if b["links"]:
         out.append("Links: " + "; ".join(f"{l['from_name']} {l['relation']} {l['to_name']}" for l in b["links"][:8]))
     if b["notes"]:
@@ -111,12 +128,13 @@ WORKFLOW
   about a project   project_brief("name" or "/path")
   built something   register_asset(name, kind, description, usage, project)   usage = the one line to reuse it
   judged something  rate(name, maturity, note)   or update_project(..., maturity=, maturity_note=)
+  ran it, it works  verify(name [, asset_kind], note)   -> restarts the trust freshness clock
   connected things  link_items(from_project, to_project, relation)   uses|could-reuse|supersedes|derived-from|related
   end of session    log_session(project, summary, decisions, resources, dead_ends, next_steps)
   brief said "no record of <dir>"  update_project(name, description, path="<dir>")
 
 TOOLS
-  search list_projects project_brief update_project register_asset find_assets rate link_items
+  search list_projects project_brief update_project register_asset find_assets rate verify link_items
   log_session add_note howto activity add_scan_root scan_path stats help
 
 LABELS
@@ -125,6 +143,8 @@ LABELS
   origin    own | vendor (third-party clones; HIDDEN from search/list unless include_vendor=True / origin="all")
   maturity  authoritative > usable > experimental > (unrated) > antiquated > sunset > broken > junk
             weights search ranking; drop with exclude_maturity="junk,broken,sunset"
+  trust     computed 0-100 (freshness, activity, hygiene, deployed, reuse, review grade; assets add churn,
+            description, curated, project). Maturity caps/floors it. Mild ranking nudge. See trust_breakdown.
   status    active | paused | done | abandoned | archived
   tags      free comma list. auto-described marks a model-drafted placeholder description.
 
@@ -180,7 +200,7 @@ def list_projects(status: str = "", tag: str = "", machine: str = "", audience: 
     """List projects with a one-line summary each. Filter by status, tag, machine (has a location there),
     audience, maturity (e.g. "authoritative") or exclude_maturity (e.g. "junk,antiquated").
     origin: "own" (default) | "vendor" (cloned third-party repos) | "all"."""
-    sql = "SELECT p.id, p.name, p.description, p.status, p.audience, p.origin, p.maturity, p.maturity_note, p.tags, p.languages, p.commit_count, p.last_commit, p.gitea_url, p.github_url FROM project p"
+    sql = "SELECT p.id, p.name, p.description, p.status, p.audience, p.origin, p.maturity, p.maturity_note, p.trust, p.trust_breakdown, p.verified_at, p.tags, p.languages, p.commit_count, p.last_commit, p.gitea_url, p.github_url FROM project p"
     where, params = [], []
     if origin and origin != "all":
         where.append("p.origin=?"); params.append(origin)
@@ -371,6 +391,16 @@ def rate(name: str = "", maturity: str = "", note: str = "", asset_kind: str = "
 
 
 @mcp.tool()
+def verify(name: str = "", asset_kind: str = "", note: str = "") -> dict:
+    """Record that you ran this project (or asset, with asset_kind) today and it worked. Restarts its trust
+    freshness clock (half-life 180 days from verification). note: what you checked. Use after actually
+    exercising the code, not after reading it."""
+    if not name:
+        return {"error": "name is required"}
+    return T.verify(name, asset_kind, note)
+
+
+@mcp.tool()
 def howto(topic: str = "") -> dict:
     """How-to knowledge: publishing to the git server, adding a machine, using codemem, and whatever docs are ingested.
     Searches howto notes first, then ingested docs. Empty topic lists available howtos."""
@@ -443,6 +473,7 @@ def stats() -> dict:
         "origins": q("SELECT origin, count(*) AS n FROM project GROUP BY origin"),
         "maturity": q("SELECT COALESCE(NULLIF(maturity,''),'unrated') AS maturity, count(*) AS n FROM project GROUP BY 1 ORDER BY n DESC"),
         "maturity_vocabulary": MATURITY,
+        "trust": q("SELECT CASE WHEN trust IS NULL THEN 'unscored' WHEN trust>=70 THEN 'high (70+)' WHEN trust>=40 THEN 'medium (40-69)' ELSE 'low (<40)' END AS band, count(*) AS n FROM project WHERE origin='own' GROUP BY 1 ORDER BY 1"),
         "index_rows": one("SELECT count(*) AS n FROM search_index")["n"],
         "embedded_rows": one("SELECT count(*) AS n FROM embedding")["n"],
         "embeddings": "on" if config.EMBED_ENABLED else "off",
@@ -559,6 +590,12 @@ async def api_project_patch(request: Request):
     p = upsert_project(request.path_params["name"], **allowed)
     S.embed_in_background()
     return JSONResponse(dict(p))
+
+
+@mcp.custom_route("/api/verify", methods=["POST"])
+async def api_verify(request: Request):
+    d = await _json(request)
+    return JSONResponse(T.verify(d.get("name", ""), d.get("asset_kind", ""), d.get("note", "")))
 
 
 @mcp.custom_route("/api/asset/{id}", methods=["PATCH"])
