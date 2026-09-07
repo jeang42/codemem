@@ -26,6 +26,9 @@ def main(argv=None):
     d.add_argument("--dry-run", action="store_true")
     dc = sub.add_parser("discover", help="mine own repos for reusable assets (tagged auto-discovered) and shared code links")
     dc.add_argument("repos", nargs="*"); dc.add_argument("--no-describe", action="store_true", help="skip model drafts for files without a docstring")
+    rv = sub.add_parser("review", help="targeted model review: near-duplicate confirmation, thin descriptions on trusted assets")
+    rv.add_argument("--stage", type=int, choices=[1, 2], default=0, help="run one stage only (default both)")
+    rv.add_argument("--limit", type=int, default=40); rv.add_argument("--dry-run", action="store_true")
     sub.add_parser("trust", help="recompute trust scores for all projects and assets")
     sub.add_parser("stats")
     a = ap.parse_args(argv)
@@ -74,6 +77,11 @@ def main(argv=None):
         print("done")
     elif a.cmd == "discover":
         from .discover import discover; print(discover(a.repos or None, describe=not a.no_describe))
+    elif a.cmd == "review":
+        from .review import stage1, stage2
+        if a.stage in (0, 1): stage1(a.limit, a.dry_run)
+        if a.stage in (0, 2): stage2(a.limit, a.dry_run)
+        from .trust import compute_all; compute_all()
     elif a.cmd == "trust":
         from .trust import compute_all; compute_all()
     elif a.cmd == "describe":

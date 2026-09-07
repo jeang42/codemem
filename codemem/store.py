@@ -1,5 +1,5 @@
 """Write-side helpers. Every mutation goes through here so the search index stays in step."""
-import os, re
+import json, os, re
 from . import db
 from .db import tx, q, one, now, index_item, tags_norm
 
@@ -103,6 +103,16 @@ def upsert_location(project_id, machine, path, **fields):
         return loc
 
 
+def _review_text(r):
+    if not r:
+        return ""
+    try:
+        d = json.loads(r)
+    except ValueError:
+        return ""
+    return "\n".join(x for x in [d.get("what_it_does", ""), "risks: " + "; ".join(d.get("risks") or []), d.get("reuse", "")] if x and x != "risks: ")
+
+
 def upsert_asset(name, kind, project=None, **fields):
     pid = None
     if project:
@@ -127,7 +137,7 @@ def upsert_asset(name, kind, project=None, **fields):
         body = "\n".join(x for x in [f"kind: {kind}", a["description"], "usage: " + (a["usage"] or ""),
                                       f"{a['machine']}:{a['path']}" if a["path"] else "",
                                       ("imports: " + a["imports"]) if a["imports"] else "",
-                                      a["signatures"] or ""] if x)
+                                      a["signatures"] or "", _review_text(a["review"])] if x)
         if a["maturity"]:
             body += f"\nmaturity: {a['maturity']} {a['maturity_note'] or ''}"
         index_item(c, "asset", aid, name, body, a["tags"], a["project"] or "", a["maturity"] or None)

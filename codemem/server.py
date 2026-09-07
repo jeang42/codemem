@@ -55,7 +55,7 @@ def brief(project, days=30, limit_notes=8, limit_commits=10):
               (p["id"], limit_notes))
     commits = q('SELECT hash, author, date, substr(message,1,200) AS message, pushed_from FROM "commit" WHERE project_id=? ORDER BY date DESC LIMIT ?',
                 (p["id"], limit_commits))
-    assets = q("SELECT id, name, kind, path, machine, description, usage, tags, maturity, maturity_note, trust, trust_breakdown, verified_at, last_changed, change_count FROM asset WHERE project_id=? ORDER BY COALESCE(trust,0) DESC, updated_at DESC", (p["id"],))
+    assets = q("SELECT id, name, kind, path, machine, description, usage, tags, maturity, maturity_note, trust, trust_breakdown, verified_at, last_changed, change_count, review, reviewed_at FROM asset WHERE project_id=? ORDER BY COALESCE(trust,0) DESC, updated_at DESC", (p["id"],))
     locations = q("SELECT machine, path, branch, dirty, last_local_commit, languages, key_files, last_scanned FROM location WHERE project_id=?", (p["id"],))
     import sys
     deps = {}
