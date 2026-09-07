@@ -169,10 +169,12 @@ def list_projects(status: str = "", tag: str = "", machine: str = "", audience: 
 @mcp.tool()
 def update_project(name: str = "", description: str = "", purpose: str = "", status: str = "", tags: str = "",
                    audience: str = "", github_url: str = "", maturity: str = "", maturity_note: str = "",
-                   origin: str = "") -> dict:
+                   origin: str = "", path: str = "", machine: str = "") -> dict:
     """Create or enrich a project. Only supplied fields change. status: active|paused|done|abandoned|archived.
     audience: unrestricted (default: personal work, unfiltered) | professional | employer (free text, used for
     filtering). origin: own | vendor (a third-party clone; hidden from search and lists by default). tags: comma list.
+    path (+ machine, default this server): record where the working copy lives, so the session-start brief finds it
+    by directory. Use this when the brief says "no record of <cwd>".
     maturity: authoritative|usable|experimental|antiquated|sunset|broken|junk, with maturity_note saying why
     (e.g. "superseded by pipeline-v2"). Assets in the project inherit it unless rated themselves."""
     if not name:
@@ -183,8 +185,18 @@ def update_project(name: str = "", description: str = "", purpose: str = "", sta
         return {"error": "origin must be own or vendor"}
     p = upsert_project(name, description=description, purpose=purpose, status=status, tags=tags,
                        audience=audience, github_url=github_url, maturity=maturity, maturity_note=maturity_note, origin=origin)
+    out = dict(p)
+    if path:
+        m = machine or config.MACHINE
+        facts = SC.describe(Path(path)) if m == config.MACHINE and Path(path).is_dir() else {}
+        loc = store.upsert_location(p["id"], m, path, is_git=int(bool(facts.get("is_git"))),
+                                    remote_url=facts.get("remote_url") or "", branch=facts.get("branch") or "",
+                                    dirty=int(bool(facts.get("dirty"))), last_local_commit=facts.get("last_local_commit") or None,
+                                    file_count=facts.get("file_count"), languages=facts.get("languages") or "",
+                                    key_files=facts.get("key_files") or "", readme_head=facts.get("readme_head") or "")
+        out["location"] = dict(loc)
     S.embed_in_background()
-    return dict(p)
+    return out
 
 
 @mcp.tool()
