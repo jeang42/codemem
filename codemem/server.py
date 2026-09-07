@@ -659,6 +659,17 @@ async def api_stats(request: Request):
     return JSONResponse(stats())
 
 
+@mcp.custom_route("/web/{name}", methods=["GET"])
+async def web_static(request: Request):
+    """Vendored front-end files (marked.min.js). No path traversal: name must be a plain file in web/."""
+    from starlette.responses import FileResponse
+    name = request.path_params["name"]
+    f = WEB / name
+    if "/" in name or ".." in name or not f.is_file():
+        return PlainTextResponse("not found", status_code=404)
+    return FileResponse(str(f))
+
+
 @mcp.custom_route("/", methods=["GET"])
 async def index(request: Request):
     return HTMLResponse((WEB / "index.html").read_text())

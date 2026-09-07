@@ -31,7 +31,9 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px 8px;
 .mat{display:inline-block;border-radius:4px;padding:0 6px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;color:#fff;background:var(--muted)}
 .tr{display:inline-block;border-radius:4px;padding:0 6px;font-size:11px;font-weight:600;color:#fff;background:#6b7280}.tr.hi{background:#15803d}.tr.mid{background:#a16207}.tr.lo{background:#b91c1c}
 .mat.authoritative{background:#15803d}.mat.usable{background:#2563eb}.mat.experimental{background:#7c3aed}.mat.antiquated{background:#a16207}.mat.sunset{background:#c2410c}.mat.broken{background:#b91c1c}.mat.junk{background:#525252}details summary{cursor:pointer}
-.md p{margin:.4em 0}
+.md p{margin:.5em 0}.md h1,.md h2,.md h3,.md h4{margin:1em 0 .4em}.md h1{font-size:20px}.md h2{font-size:17px}.md h3{font-size:15px}
+.md table{width:auto;margin:.6em 0;display:block;overflow-x:auto}.md th,.md td{border:1px solid var(--line);padding:4px 8px}.md ul,.md ol{padding-left:1.4em}.md li{margin:.15em 0}
+.md blockquote{border-left:3px solid var(--line);margin:.6em 0;padding:.1em .8em;color:var(--muted)}.md pre{white-space:pre}.md hr{border:0;border-top:1px solid var(--line)}
 </style>
 </head>
 <body>
@@ -49,6 +51,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:6px 8px;
   <button id="theme" title="toggle theme">◐</button>
 </header>
 <main id="main"></main>
+<script src="/web/marked.min.js"></script>
 <script>
 const $=s=>document.querySelector(s), esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const root=document.documentElement;
@@ -68,8 +71,7 @@ const matSel=(name,cur)=>`<select name="${name}"><option value="">unrated</optio
 const api=async(p)=>{const r=await fetch('/api'+p);if(!r.ok)throw new Error(r.status);return r.json()};
 const chips=t=>(t||'').split(',').filter(Boolean).map(x=>`<span class="chip">${esc(x)}</span>`).join('');
 const d10=s=>(s||'').slice(0,10);
-const md=s=>{s=esc(s);s=s.replace(/```([\s\S]*?)```/g,(m,c)=>`<pre>${c}</pre>`).replace(/`([^`]+)`/g,'<code>$1</code>');
-  return s.split(/\n{2,}/).map(p=>/^#+\s/.test(p)?`<h4>${p.replace(/^#+\s/,'')}</h4>`:p.startsWith('<pre>')?p:`<p>${p.replace(/\n/g,'<br>')}</p>`).join('')};
+const md=s=>{try{return marked.parse(String(s??''),{gfm:true,breaks:false})}catch(e){return `<pre>${esc(s)}</pre>`}};
 function goSearch(e){e.preventDefault();location.hash='#/search/'+encodeURIComponent($('#q').value);return false}
 const V={
  async home(){const s=await api('/stats');$('#machine').textContent=s.machine+':'+s.port;
