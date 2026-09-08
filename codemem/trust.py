@@ -4,7 +4,7 @@ Trust is NOT maturity. Maturity is a human judgment and wins: authoritative floo
 junk caps it at 15. Trust fills the gap for everything unrated, from evidence the repos already
 give: how recently it changed (or was verified), how much work went into it, hygiene, whether it
 is deployed and running, whether other code reuses it, whether something supersedes it, and the
-grade from an external code review table where one exists.
+grade from an external code review table where one is configured.
 
 Recomputed on every sync. `verify(name)` records verified_at, which restarts the freshness clock
 (half-life 180 days from verification instead of 365 from the last commit).
@@ -15,7 +15,7 @@ from pathlib import Path
 from . import config
 from .db import q, one, tx, now
 
-REVIEW_TABLE = Path("/srv/git/PROJECT_REVIEW.md")   # optional: markdown table with a grade column
+REVIEW_TABLE = Path(config.REVIEW_TABLE) if config.REVIEW_TABLE else None
 GRADE = {"A": 100, "B": 80, "C": 60, "D": 40, "F": 20}
 CAP = {"junk": 15, "broken": 25, "sunset": 35, "antiquated": 45}
 FLOOR = {"authoritative": 85, "usable": 60}
@@ -49,7 +49,7 @@ def freshness(last_change, verified_at):
 
 def review_grades():
     grades = {}
-    if REVIEW_TABLE.exists():
+    if REVIEW_TABLE and REVIEW_TABLE.exists():
         for m in re.finditer(r"^\|[^|]*\|\s*`([^`]+)`\s*\|[^|]*\|[^|]*\|\s*([A-F])\s*\|", REVIEW_TABLE.read_text(), re.M):
             grades[m.group(1)] = GRADE[m.group(2)]
     return grades

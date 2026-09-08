@@ -129,7 +129,7 @@ def brief_text(b):
 
 # ---- MCP tools ---------------------------------------------------------------
 
-HELP = """codemem: memory for every coding project on every machine. Web UI http://localhost:8055/
+HELP = """codemem: memory for every coding project on every machine. Web UI at the server root URL.
 
 WORKFLOW
   start of a task   search("what you are about to build")  and  find_assets("...")   -> reuse before rebuilding
@@ -434,7 +434,7 @@ HANDOFF_CLASSES = ("library", "service", "agent-facing", "pipeline", "data-store
 @mcp.tool()
 def handoff(name: str = "", stage: str = "", old: str = "", new: str = "", promotion_class: str = "", dependants: str = "",
             report: str = "", note: str = "", project: str = "") -> dict:
-    """Record or advance a handoff. One record per name; each call appends a
+    """Record or advance a handoff: one implementation replacing another. One record per name; each call appends a
     dated stage entry. stage: candidate|shadow|verified|promoted|retired|rolled-back. old/new: asset or
     project names being replaced/replacing. promotion_class: library|service|agent-facing|pipeline|data-store.
     report: path to the parity report. note: what happened, failures included. Empty name lists handoffs."""
@@ -503,7 +503,7 @@ def list_handoffs(stage: str = "") -> dict:
 
 @mcp.tool()
 def howto(topic: str = "") -> dict:
-    """How-to knowledge: publishing to the git server, adding a machine, using codemem, and whatever docs are ingested.
+    """How-to knowledge: publishing to the git host, adding a machine, using codemem, and whatever docs are ingested.
     Searches howto notes first, then ingested docs. Empty topic lists available howtos."""
     if not topic.strip():
         return {"howtos": q("SELECT id, title, tags FROM note WHERE kind='howto' ORDER BY title")}

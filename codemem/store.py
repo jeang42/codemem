@@ -46,8 +46,8 @@ def is_local_remote(url):
 
 
 def remote_owner(url):
-    """'https://github.com/ggerganov/llama.cpp' -> 'ggerganov'; None for our own server, local paths, or no remote."""
-    if is_local_remote(url) or "/srv/git/" in url:
+    """'https://github.com/ggerganov/llama.cpp' -> 'ggerganov'; None for our own git host, local paths, or no remote."""
+    if is_local_remote(url) or (config.GIT_SSH_HOST and config.GIT_SSH_HOST in url) or f"{config.GIT_ROOT}/" in url:
         return None
     u = url.rstrip("/").removesuffix(".git")
     if "://" in u:
@@ -59,7 +59,6 @@ def remote_owner(url):
 
 
 def is_vendor_remote(url):
-    from . import config
     o = remote_owner(url)
     return bool(o) and bool(config.OWN_REMOTE_OWNERS) and o not in config.OWN_REMOTE_OWNERS
 

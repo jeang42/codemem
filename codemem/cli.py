@@ -19,7 +19,7 @@ def main(argv=None):
     e.add_argument("--all", action="store_true", help="keep going until nothing is pending")
     sub.add_parser("reindex", help="rebuild the FTS index from source tables (drops embeddings)")
     bk = sub.add_parser("backup", help="consistent gzip copy of the database")
-    bk.add_argument("--dest", default=str(Path.home() / ".codemem" / "backups"))
+    bk.add_argument("--dest", default=str(config.BACKUP_DIR))
     bk.add_argument("--keep", type=int, default=30)
     sub.add_parser("sync", help="docs + gitea + scan + embed: the timer job")
     d = sub.add_parser("describe", help="draft descriptions for own projects that lack one (Ollama, tagged auto-described)")

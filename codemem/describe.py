@@ -10,7 +10,7 @@ from . import config
 from .db import q, one
 from .store import upsert_project
 
-MODEL = "qwen3-coder:30b"
+MODEL = config.DESCRIBE_MODEL
 PROMPT = """You are cataloguing a developer's personal projects. From the evidence below, write:
 1. "description": one sentence, max 25 words, what the project IS (tool/app/library/experiment) and what it does. No marketing words.
 2. "purpose": one sentence, max 25 words, why someone would reach for it, or what problem it solved.

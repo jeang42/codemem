@@ -79,7 +79,7 @@ def _project_for_repo(name):
             desc = d
     except OSError:
         pass
-    remote = f"ssh://git@localhost{config.GIT_ROOT}/{name}.git"
+    remote = f"ssh://{config.GIT_SSH_HOST}{config.GIT_ROOT}/{name}.git"
     return upsert_project(name, description=desc, remote_url=remote)
 
 

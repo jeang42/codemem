@@ -15,7 +15,7 @@ from .db import q, one, tx
 from .store import upsert_asset, add_link, get_project
 from .discover_core import scan_bare, scan_worktree, asset_name
 
-DESCRIBE_MODEL = "qwen3-coder:30b"
+DESCRIBE_MODEL = config.DESCRIBE_MODEL
 
 
 def draft_description(path, text_head):

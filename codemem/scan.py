@@ -1,6 +1,6 @@
 """Small local project scanner. Answers "what lives at this path" and records it as a location.
 
-Deliberately modest: This finds project directories under
+Deliberately modest. This finds project directories under
 a root (git repo or a recognised marker), reads the README head and CLAUDE.md head, counts
 languages by extension, notes key files, and records the git remote/branch/dirty state.
 

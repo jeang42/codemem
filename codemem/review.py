@@ -20,7 +20,7 @@ from .store import upsert_asset, add_link, get_project
 from .discover import repo_for_project
 from .discover_core import _git
 
-MODEL = "qwen3-coder:30b"
+MODEL = config.DESCRIBE_MODEL
 # The model pads: "No hardcoded paths found" is not a risk, nor is a guess about code it did not see.
 NON_RISK = re.compile(r"^(no |none|not detected|nothing|n/a)|(assumed|likely required|may be in environment|not visible|not shown)", re.I)
 MAX_LINES = 250

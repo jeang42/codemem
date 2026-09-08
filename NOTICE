@@ -1,0 +1,5 @@
+codemem
+Copyright 2026 Jeff Angelcyk
+
+This product includes marked (https://github.com/markedjs/marked),
+Copyright (c) 2011-2025 Christopher Jeffrey, MIT License, vendored at codemem/web/marked.min.js.

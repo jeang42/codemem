@@ -1,7 +1,10 @@
 [project]
 name = "codemem"
 version = "0.1.0"
-description = "system-coding-memory: one MCP memory for every coding project on every machine"
+description = "codemem: one MCP memory for every coding project on every machine"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+authors = [{name = "Jeff Angelcyk"}]
 requires-python = ">=3.11"
 dependencies = ["mcp>=1.10,<2"]
 
