@@ -112,7 +112,7 @@ const V={
   <select id="f_asort" onchange="route()">${[['updated','recently updated'],['trust','trust'],['changed','last code change'],['churn','most commits'],['name','name']].map(([v,l])=>`<option value="${v}" ${v===so?'selected':''}>${l}</option>`).join('')}</select>
   <span class="muted">${rows.length} assets</span></div><div class="grid">${rows.map(a=>`<div class="card">${assetHtml(a)}</div>`).join('')}</div>`},
  async notes(){const k=$('#f_nkind')?.value||'';const r=await api(`/notes?kind=${k}${ex()}`);
-  return `<div class="row"><select id="f_nkind" onchange="route()"><option value="">any kind</option>${['session','session-auto','decision','howto','resource','issue','idea','note'].map(x=>`<option ${x===k?'selected':''}>${x}</option>`).join('')}</select><span class="muted">${r.notes.length} notes</span></div>${r.notes.map(noteHtml).join('')}`},
+  return `<div class="row"><select id="f_nkind" onchange="route()"><option value="">any kind</option>${['handoff','session','session-auto','decision','howto','resource','issue','idea','note'].map(x=>`<option ${x===k?'selected':''}>${x}</option>`).join('')}</select><span class="muted">${r.notes.length} notes</span></div>${r.notes.map(noteHtml).join('')}`},
  async activity(){const d=$('#f_days')?.value||14;const a=await api(`/activity?days=${d}${ex()}`);
   return `<div class="row"><label>days <input id="f_days" type="number" value="${d}" min="1" style="width:70px" onchange="route()"></label></div>
   <div class="two"><div class="card"><h3>Commits</h3><div class="wrap">${tbl(a.commits,['date','project','message','author','pushed_from'])}</div></div><div class="card"><h3>Notes</h3>${a.notes.map(noteHtml).join('')||'<p class="muted">none</p>'}</div></div>`},

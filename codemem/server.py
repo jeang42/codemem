@@ -139,13 +139,14 @@ WORKFLOW
   built something   register_asset(name, kind, description, usage, project)   usage = the one line to reuse it
   judged something  rate(name, maturity, note)   or update_project(..., maturity=, maturity_note=)
   ran it, it works  verify(name [, asset_kind], note)   -> restarts the trust freshness clock
+  replacing old code handoff(name, stage, old, new, promotion_class, report, note)  ->  list_handoffs()
   connected things  link_items(from_project, to_project, relation)   uses|could-reuse|supersedes|derived-from|related
   end of session    log_session(project, summary, decisions, resources, dead_ends, next_steps)
   brief said "no record of <dir>"  update_project(name, description, path="<dir>")
 
 TOOLS
   search list_projects project_brief update_project register_asset find_assets rate verify link_items
-  log_session add_note howto activity add_scan_root scan_path stats help
+  handoff list_handoffs log_session add_note howto activity add_scan_root scan_path stats help
 
 LABELS
   audience  unrestricted (default: personal work, unfiltered) | professional | employer
@@ -424,6 +425,80 @@ def verify(name: str = "", asset_kind: str = "", note: str = "") -> dict:
     if not name:
         return {"error": "name is required"}
     return T.verify(name, asset_kind, note)
+
+
+HANDOFF_STAGES = ("candidate", "shadow", "verified", "promoted", "retired", "rolled-back")
+HANDOFF_CLASSES = ("library", "service", "agent-facing", "pipeline", "data-store")
+
+
+@mcp.tool()
+def handoff(name: str = "", stage: str = "", old: str = "", new: str = "", promotion_class: str = "", dependants: str = "",
+            report: str = "", note: str = "", project: str = "") -> dict:
+    """Record or advance a handoff. One record per name; each call appends a
+    dated stage entry. stage: candidate|shadow|verified|promoted|retired|rolled-back. old/new: asset or
+    project names being replaced/replacing. promotion_class: library|service|agent-facing|pipeline|data-store.
+    report: path to the parity report. note: what happened, failures included. Empty name lists handoffs."""
+    if not name:
+        return list_handoffs()
+    if stage and stage not in HANDOFF_STAGES:
+        return {"error": f"stage must be one of {HANDOFF_STAGES}"}
+    if promotion_class and promotion_class not in HANDOFF_CLASSES:
+        return {"error": f"promotion_class must be one of {HANDOFF_CLASSES}"}
+    existing = one("SELECT * FROM note WHERE kind='handoff' AND title=?", (name,))
+    head = {}
+    body_lines = []
+    if existing:
+        first, _, rest = existing["body"].partition("\n---\n")
+        try:
+            head = json.loads(first)
+        except ValueError:
+            head = {}
+        body_lines = rest.splitlines() if rest else []
+    for k, v in (("old", old), ("new", new), ("class", promotion_class), ("dependants", dependants), ("report", report)):
+        if v:
+            head[k] = v
+    if stage:
+        head["stage"] = stage
+        head.setdefault("history", []).append({"stage": stage, "at": now()[:16]})
+    entry = f"{now()[:16]} [{stage or head.get('stage', '?')}] {note}".rstrip()
+    if note or stage:
+        body_lines.append(entry)
+    body = json.dumps(head) + "\n---\n" + "\n".join(body_lines)
+    tags = "handoff," + ("stage:" + head.get("stage", "candidate")) + (",class:" + head["class"] if head.get("class") else "")
+    with tx() as c:
+        if existing:
+            c.execute("UPDATE note SET body=?, tags=?, project_id=COALESCE((SELECT id FROM project WHERE name=? COLLATE NOCASE), project_id) WHERE id=?",
+                      (body, tags, project, existing["id"]))
+            pname = one("SELECT name FROM project WHERE id=(SELECT project_id FROM note WHERE id=?)", (existing["id"],))
+            index_item_note = existing["id"]
+        else:
+            pid = (get_project(project) or {}).get("id") if project else None
+            c.execute("INSERT INTO note(project_id, kind, title, body, tags, machine, created_at) VALUES (?,?,?,?,?,?,?)",
+                      (pid, "handoff", name, body, tags, config.MACHINE, now()))
+            index_item_note = c.execute("SELECT last_insert_rowid()").fetchone()[0]
+        from .db import index_item
+        pn = one("SELECT name FROM project WHERE id=(SELECT project_id FROM note WHERE id=?)", (index_item_note,))
+        index_item(c, "note", index_item_note, f"[handoff] {name}", body, tags, pn["name"] if pn else "")
+    S.embed_in_background()
+    return {"name": name, **head, "log": body_lines[-5:]}
+
+
+@mcp.tool()
+def list_handoffs(stage: str = "") -> dict:
+    """Handoffs in flight (or at a given stage), newest activity first. Each shows old, new, class, stage, last entry."""
+    rows = q("SELECT n.id, n.title, n.body, n.tags, n.created_at, p.name AS project FROM note n LEFT JOIN project p ON p.id=n.project_id WHERE n.kind='handoff' ORDER BY n.id DESC")
+    out = []
+    for r in rows:
+        first, _, rest = r["body"].partition("\n---\n")
+        try:
+            head = json.loads(first)
+        except ValueError:
+            head = {}
+        if stage and head.get("stage") != stage:
+            continue
+        out.append({"name": r["title"], "project": r["project"], **{k: head.get(k) for k in ("stage", "old", "new", "class", "dependants", "report")},
+                    "last": rest.splitlines()[-1] if rest.strip() else ""})
+    return {"count": len(out), "handoffs": out}
 
 
 @mcp.tool()
