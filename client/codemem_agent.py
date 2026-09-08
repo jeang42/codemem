@@ -68,6 +68,11 @@ def find(root, depth=6):
         for k in sorted(kids):
             if is_project(k):
                 yield k
+                try:   # workspace: child repos inside a repo
+                    for kk in sorted(x for x in k.iterdir() if x.is_dir() and not x.is_symlink() and x.name not in SKIP and (x / ".git").exists()):
+                        yield kk
+                except OSError:
+                    pass
             elif n + 1 < depth:
                 stack.append((k, n + 1))
 

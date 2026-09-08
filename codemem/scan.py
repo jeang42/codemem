@@ -65,6 +65,13 @@ def find_projects(root: Path, max_depth=config.SCAN_MAX_DEPTH):
         for k in kids:
             if is_project_dir(k):
                 yield k
+                # a workspace: a repo whose immediate children are repos of their own
+                try:
+                    for kk in sorted(x for x in k.iterdir() if x.is_dir() and not x.is_symlink() and x.name not in config.SKIP_DIRS
+                                     and not x.name.startswith(".") and (x / ".git").exists()):
+                        yield kk
+                except OSError:
+                    pass
             elif depth + 1 < max_depth:
                 stack.append((k, depth + 1))
 
