@@ -8,7 +8,7 @@ PRAGMA journal_mode=WAL;
 CREATE TABLE IF NOT EXISTS project (
   id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL,
   description TEXT DEFAULT '', purpose TEXT DEFAULT '', status TEXT DEFAULT 'active',
-  audience TEXT DEFAULT 'unrestricted', origin TEXT DEFAULT 'own', maturity TEXT DEFAULT '', maturity_note TEXT DEFAULT '',
+  audience TEXT DEFAULT 'unrestricted', origin TEXT DEFAULT 'own', visibility TEXT DEFAULT 'private', maturity TEXT DEFAULT '', maturity_note TEXT DEFAULT '',
   trust INTEGER, trust_breakdown TEXT DEFAULT '', verified_at TEXT, verified_note TEXT DEFAULT '',
   tags TEXT DEFAULT '', languages TEXT DEFAULT '',
   remote_url TEXT DEFAULT '', gitea_url TEXT DEFAULT '', github_url TEXT DEFAULT '',
@@ -113,6 +113,8 @@ def _migrate(c):
         for col, typ in (("trust", "INTEGER"), ("trust_breakdown", "TEXT DEFAULT ''"), ("verified_at", "TEXT"), ("verified_note", "TEXT DEFAULT ''")):
             if col not in cols(table):
                 c.execute(f'ALTER TABLE "{table}" ADD COLUMN {col} {typ}')
+    if "visibility" not in cols("project"):
+        c.execute("ALTER TABLE project ADD COLUMN visibility TEXT DEFAULT 'private'")
     if "origin" not in cols("project"):
         c.execute("ALTER TABLE project ADD COLUMN origin TEXT DEFAULT 'own'")
     # 2026-09-06: the default audience label changed from 'personal' to 'unrestricted' (see docs/USER_GUIDE.md).

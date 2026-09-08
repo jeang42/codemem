@@ -99,7 +99,7 @@ def brief_text(b):
         out.append(f"**Maturity: {p['maturity']}**" + (f" ({p['maturity_note']})" if p.get("maturity_note") else ""))
     if p.get("trust") is not None:
         out.append(f"Trust {p['trust']}/100 " + _trust_words(p))
-    meta = [f"status={p['status']}", f"audience={p['audience']}"] + (["VENDOR CLONE (not our code)"] if p.get("origin") == "vendor" else [])
+    meta = [f"status={p['status']}", f"audience={p['audience']}", f"visibility={p.get('visibility') or 'private'}"] + (["VENDOR CLONE (not our code)"] if p.get("origin") == "vendor" else [])
     if p.get("tags"):
         meta.append(f"tags={p['tags']}")
     if p.get("commit_count"):
@@ -151,6 +151,7 @@ LABELS
   audience  unrestricted (default: personal work, unfiltered) | professional | employer
             filter with exclude_audience="unrestricted" in a professional context; never filtered on its own
   origin    own | vendor (third-party clones; HIDDEN from search/list unless include_vendor=True / origin="all")
+  visibility private (default) | shared | public: who may see it; list_projects(visibility=)
   maturity  authoritative > usable > experimental > (unrated) > antiquated > sunset > broken > junk
             weights search ranking; drop with exclude_maturity="junk,broken,sunset"
   trust     computed 0-100 (freshness, activity, hygiene, deployed, reuse, review grade; assets add churn,
@@ -206,14 +207,16 @@ def project_brief(name_or_path: str = "", machine: str = "") -> dict:
 
 @mcp.tool()
 def list_projects(status: str = "", tag: str = "", machine: str = "", audience: str = "", exclude_audience: str = "",
-                  maturity: str = "", exclude_maturity: str = "", limit: int = 200, origin: str = "own") -> dict:
+                  maturity: str = "", exclude_maturity: str = "", limit: int = 200, origin: str = "own", visibility: str = "") -> dict:
     """List projects with a one-line summary each. Filter by status, tag, machine (has a location there),
     audience, maturity (e.g. "authoritative") or exclude_maturity (e.g. "junk,antiquated").
     origin: "own" (default) | "vendor" (cloned third-party repos) | "all"."""
-    sql = "SELECT p.id, p.name, p.description, p.status, p.audience, p.origin, p.maturity, p.maturity_note, p.trust, p.trust_breakdown, p.verified_at, p.tags, p.languages, p.commit_count, p.last_commit, p.gitea_url, p.github_url FROM project p"
+    sql = "SELECT p.id, p.name, p.description, p.status, p.audience, p.origin, p.visibility, p.maturity, p.maturity_note, p.trust, p.trust_breakdown, p.verified_at, p.tags, p.languages, p.commit_count, p.last_commit, p.gitea_url, p.github_url FROM project p"
     where, params = [], []
     if origin and origin != "all":
         where.append("p.origin=?"); params.append(origin)
+    if visibility:
+        where.append("p.visibility=?"); params.append(visibility)
     if maturity:
         where.append("p.maturity=?"); params.append(maturity)
     exm = _aud(exclude_maturity)
@@ -242,10 +245,11 @@ def list_projects(status: str = "", tag: str = "", machine: str = "", audience: 
 @mcp.tool()
 def update_project(name: str = "", description: str = "", purpose: str = "", status: str = "", tags: str = "",
                    audience: str = "", github_url: str = "", maturity: str = "", maturity_note: str = "",
-                   origin: str = "", path: str = "", machine: str = "") -> dict:
+                   origin: str = "", path: str = "", machine: str = "", visibility: str = "") -> dict:
     """Create or enrich a project. Only supplied fields change. status: active|paused|done|abandoned|archived.
     audience: unrestricted (default: personal work, unfiltered) | professional | employer (free text, used for
     filtering). origin: own | vendor (a third-party clone; hidden from search and lists by default). tags: comma list.
+    visibility: private (default, the owner only) | shared (named people) | public (anyone): who may SEE the project.
     path (+ machine, default this server): record where the working copy lives, so the session-start brief finds it
     by directory. Use this when the brief says "no record of <cwd>".
     maturity: authoritative|usable|experimental|antiquated|sunset|broken|junk, with maturity_note saying why
@@ -256,8 +260,11 @@ def update_project(name: str = "", description: str = "", purpose: str = "", sta
         return {"error": f"maturity must be one of {list(MATURITY)}", "meanings": MATURITY}
     if origin and origin not in ("own", "vendor"):
         return {"error": "origin must be own or vendor"}
+    if visibility and visibility not in ("private", "shared", "public"):
+        return {"error": "visibility must be private, shared or public"}
     p = upsert_project(name, description=description, purpose=purpose, status=status, tags=tags,
-                       audience=audience, github_url=github_url, maturity=maturity, maturity_note=maturity_note, origin=origin)
+                       audience=audience, github_url=github_url, maturity=maturity, maturity_note=maturity_note, origin=origin,
+                       visibility=visibility)
     out = dict(p)
     if path:
         m = machine or config.MACHINE
@@ -603,7 +610,7 @@ async def api_project(request: Request):
 @mcp.custom_route("/api/project/{name}", methods=["PATCH"])
 async def api_project_patch(request: Request):
     d = await _json(request)
-    allowed = {k: d[k] for k in ("description", "purpose", "status", "tags", "audience", "github_url", "maturity", "maturity_note", "origin") if k in d}
+    allowed = {k: d[k] for k in ("description", "purpose", "status", "tags", "audience", "github_url", "maturity", "maturity_note", "origin", "visibility") if k in d}
     if allowed.get("maturity") and allowed["maturity"] not in MATURITY:
         return JSONResponse({"error": f"maturity must be one of {list(MATURITY)}"}, status_code=400)
     p = upsert_project(request.path_params["name"], **allowed)
