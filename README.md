@@ -1,12 +1,37 @@
 # codemem
 
-One memory for every coding project on every machine, served to Claude Code as an MCP server.
-It knows what projects exist, where they live, what reusable pieces they contain, what each
-session did and decided, every commit pushed to the git host, and how to do recurring things
-(publish a repo, add a machine, deploy a service). Everything is searchable from any machine,
-from Claude Code, from other MCP clients, or from the web UI.
+**Your coding agents keep rebuilding what you already have. codemem remembers what they built,
+across every project and every machine, and scores each piece on evidence of whether it worked.**
 
-Runs on the git host (the machine holding the bare repos), one Python process, port **8055**.
+It is an MCP server for Claude Code and other MCP clients. It knows what projects exist, where
+they live, what reusable pieces they contain, what each session did and decided, every commit
+pushed to the git host, and how to do recurring things. Everything is searchable from any
+machine, from an agent, or from the web UI. It is written to *during* work, not after.
+
+One Python process, SQLite, no external services required.
+
+## What makes it different
+
+Inventory scripts snapshot a directory and you read the report once. Registries list what people
+published. codemem does neither.
+
+- **Trust from evidence, not from stars.** Every project and asset gets a computed score from
+  how recently it changed, how much work went into it, whether it is actually deployed and
+  running, whether anything else imports it, and whether a human vouched for it. `verify` records
+  "I ran it today and it works" and restarts the freshness clock. Scores are recomputed on
+  every sync, so they decay when you stop touching something.
+- **It finds the copies you forgot.** Discovery mines every repo at HEAD for scripts, modules,
+  service units, Dockerfiles and MCP servers, hashes their functions, and links repos that share
+  code. It will tell you that you wrote the same retry wrapper in three places.
+- **Agents feed it automatically.** A session hook records what each Claude Code session did,
+  and gives the next session a brief on the project it just opened. The catalogue builds itself.
+- **Maturity is a first-class label.** `authoritative`, `usable`, `experimental`, `antiquated`,
+  `sunset`, `broken`, `junk`, each with a reason. Search ranks by it, and you can exclude the
+  ratings you should not build on.
+- **Your code stays where it is.** codemem stores metadata: names, descriptions, imports,
+  symbols, function hashes, commit records. It does not copy your source anywhere.
+
+## Endpoints
 
 | Endpoint | What |
 |---|---|
@@ -14,6 +39,19 @@ Runs on the git host (the machine holding the bare repos), one Python process, p
 | `http://<host>:8055/` | Web UI: search, projects, assets, notes, activity, docs. Dark mode. |
 | `http://<host>:8055/api/…` | JSON API used by the UI (see docs/architecture.md) |
 | `http://<host>:8055/health` | liveness |
+
+Normally runs on the git host, the machine holding the bare repos, so it can read them directly.
+
+> **Security: codemem has no authentication.** It is built for a trusted network, and anyone who
+> can reach the port can read and write everything. Do not expose it to the internet without an
+> authenticating proxy in front of it. See docs/architecture.md.
+
+## Requirements
+
+Python 3.11 or newer, and git. Optional: a git host with bare repos for the commit feed, Gitea
+for descriptions and web links, and [Ollama](https://ollama.com) for semantic search, drafted
+descriptions and the review pass. Everything works without the optional pieces; search falls
+back to BM25 alone.
 
 ## Why
 
@@ -101,6 +139,13 @@ brief of the current project (if codemem knows it) and ends with an automatic se
 
 Storage: `$CODEMEM_DB` (default `~/.codemem/codemem.db`, SQLite, WAL). Backups: `$CODEMEM_BACKUP_DIR`
 (default `~/.codemem/backups/`).
+
+## Status and contributing
+
+Extracted from a system that has been running daily against 165 projects, 735 assets and 2,000+
+commits across three machines. It is stable for that use, but it has had one operator, so expect
+rough edges the moment your layout differs from that one. Issues and pull requests welcome;
+please open an issue before a large change so we can agree on the shape.
 
 ## License
 
