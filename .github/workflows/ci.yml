@@ -1,0 +1,56 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: smoke (python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: install
+        run: python -m pip install --upgrade pip && pip install -e .
+      - name: smoke
+        run: scripts/smoke.sh python
+
+  hygiene:
+    name: hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: compile every module
+        run: python -m compileall -q codemem client
+      - name: no site-specific detail in the tree
+        run: |
+          # This repository is public. Machine names, LAN addresses and absolute home paths
+          # belong in configuration, never in code, docs or defaults. Documentation
+          # placeholders (/home/me, /home/user, /home/you) are allowed on purpose.
+          # One combined pattern: grep -P accepts only a single -e.
+          PAT='192\.168\.[0-9]|/wd18a|/drive_y|/home/(?!me/|user/|you/)[a-z][a-z0-9_-]*/'
+          set +e
+          grep -rInP "$PAT" --exclude-dir=.git --exclude-dir=venv --exclude-dir=.github .
+          rc=$?
+          set -e
+          # 0 = matches found, 1 = clean, 2+ = grep itself failed. Only 1 is a pass.
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::site-specific detail found above; move it to codemem/config.py with an env override"
+            exit 1
+          elif [ "$rc" -ne 1 ]; then
+            echo "::error::the hygiene grep failed to run (exit $rc); not treating that as a pass"
+            exit 1
+          fi
+          echo "clean"

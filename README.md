@@ -145,7 +145,12 @@ Storage: `$CODEMEM_DB` (default `~/.codemem/codemem.db`, SQLite, WAL). Backups: 
 Extracted from a system that has been running daily against 165 projects, 735 assets and 2,000+
 commits across three machines. It is stable for that use, but it has had one operator, so expect
 rough edges the moment your layout differs from that one. Issues and pull requests welcome;
-please open an issue before a large change so we can agree on the shape.
+please open an issue before a large change so we can agree on the shape. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for how to run it locally and the two rules that are not
+negotiable, and [SECURITY.md](SECURITY.md) for what it stores and how to report a vulnerability.
+
+Run `scripts/smoke.sh` before pushing: it boots the server against a throwaway database and
+checks that health, the web UI, the JSON API and the schema all come up.
 
 ## License
 
