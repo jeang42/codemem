@@ -3,7 +3,7 @@
 Tools are thin: validate, call store/search, return JSON-able dicts. Every argument has a default
 (some MCP clients reject calls that omit a required parameter).
 """
-import json, os
+import json, os, re
 from pathlib import Path
 from starlette.requests import Request
 from starlette.responses import JSONResponse, HTMLResponse, PlainTextResponse
@@ -339,6 +339,36 @@ def find_assets(query: str = "", kind: str = "", tag: str = "", project: str = "
     return {"assets": q(sql, params)}
 
 
+# ---- malformed-call guard ----------------------------------------------------
+# Some clients fail to serialise a multi-argument call and send the later arguments as literal
+# markup inside an earlier one, so a session note arrives with its whole body in `summary` and
+# every other field empty. That used to be written silently and could only be fixed by hand.
+# The signature is unmistakable: a parameter tag in the text AND the field it names left empty.
+# Quoting such a tag on purpose — a note ABOUT this bug — leaves the named field filled, so it
+# passes. Only the unmistakable case is rejected; nothing is guessed at or repaired.
+
+_PARAM_TAG = re.compile(r'<\s*/?\s*(?:\w+:)?parameter\b[^>]*>', re.I)
+_PARAM_NAME = re.compile(r'<\s*(?:\w+:)?parameter\s+name\s*=\s*"([^"]+)"', re.I)
+
+
+def _malformed(fields):
+    """Return an error dict if the call did not serialise, else None. `fields` is the tool's own
+    arguments by name, so the check knows which of them were left empty."""
+    hits = []
+    for name, value in fields.items():
+        if not isinstance(value, str) or not value:
+            continue
+        for named in _PARAM_NAME.findall(value):
+            if named in fields and not (fields.get(named) or "").strip():
+                hits.append(f"{name} carries a literal <parameter name=\"{named}\"> tag while {named} is empty")
+    if not hits:
+        return None
+    return {"error": "malformed call — nothing was written. " + "; ".join(hits),
+            "fix": "The arguments were not serialised: the later ones arrived as text inside an earlier one. "
+                   "Send the call again with each argument passed separately.",
+            "wrote": None}
+
+
 @mcp.tool()
 def log_session(project: str = "", summary: str = "", decisions: str = "", resources: str = "", dead_ends: str = "",
                 next_steps: str = "", machine: str = "", session_id: str = "", path: str = "", tags: str = "") -> dict:
@@ -346,6 +376,10 @@ def log_session(project: str = "", summary: str = "", decisions: str = "", resou
     the rest are free text. resources: tools, APIs, models, other projects used."""
     if not summary:
         return {"error": "summary is required"}
+    bad = _malformed({"summary": summary, "decisions": decisions, "resources": resources,
+                      "dead_ends": dead_ends, "next_steps": next_steps, "tags": tags, "project": project})
+    if bad:
+        return bad
     body = summary
     for label, val in [("Decisions", decisions), ("Resources used", resources), ("Dead ends", dead_ends), ("Next steps", next_steps)]:
         if val:
@@ -363,6 +397,9 @@ def add_note_tool(kind: str = "note", title: str = "", body: str = "", project: 
     get from howto(); decisions explain why something is the way it is."""
     if not title:
         return {"error": "title is required"}
+    bad = _malformed({"kind": kind, "title": title, "body": body, "project": project, "tags": tags})
+    if bad:
+        return bad
     n = store.add_note(kind, title, body, project=project or None, tags=tags, machine=machine or config.MACHINE)
     S.embed_in_background()
     return dict(n)

@@ -213,6 +213,13 @@ The scanner and the git feed give you the skeleton. The value comes from:
 - **links**: `link_items("chat-app", "persona-lib", "uses", "same persona loader")`
 - **decisions**: `add_note(kind="decision", title="Why SQLite not Postgres", body=...)`
 
+`log_session` and `add_note` reject a call whose arguments did not serialise. Some clients fold
+the later arguments into an earlier one as literal `<parameter name="...">` markup, which used to
+be written silently as a session note with everything crammed into the summary. Such a call is now
+refused with nothing written and a message saying to send it again; only the unmistakable case is
+caught — a parameter tag naming a field that was left empty — so a note that quotes the markup on
+purpose still goes through.
+
 Notes are the one record type written by hand rather than derived from source, so they are the one
 type that needs correcting. `delete_note(note_id)` removes a note along with its search and
 embedding rows and returns the deleted row, so a mistake can be undone by writing it back. Ids come

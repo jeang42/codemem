@@ -67,4 +67,29 @@ assert delete_note(nid) is None, "deleting a missing note should return None, no
 print("note lifecycle ok")
 PYEOF
 
+echo "-- malformed-call guard"
+CODEMEM_DB="$TMP/smoke.db" CODEMEM_EMBED=0 "$PY" - <<'PYEOF'
+import codemem.server as s
+from codemem.db import q
+
+before = len(q("SELECT id FROM note"))
+
+# The failure this guards: a client that does not serialise its arguments sends the later ones
+# as literal markup inside an earlier one.
+bad = s.log_session(summary='Summary.\n<parameter name="decisions">leaked</parameter>')
+assert "error" in bad, "malformed log_session was accepted"
+assert len(q("SELECT id FROM note")) == before, "malformed call wrote a note anyway"
+
+# A well-formed call is untouched.
+ok = s.log_session(summary="smoke session", decisions="a decision")
+assert ok.get("id"), "well-formed log_session was rejected"
+
+# A note that QUOTES the markup, with the named field filled, is legitimate and must pass.
+quoted = s.log_session(summary='about <parameter name="decisions"> leaking', decisions="filled in")
+assert quoted.get("id"), "false positive: a deliberate quote was rejected"
+
+assert "error" in s.add_note_tool(title="t", body='<parameter name="tags">x</parameter>'), "add_note unguarded"
+print("malformed-call guard ok")
+PYEOF
+
 echo "== smoke passed =="
