@@ -146,7 +146,7 @@ WORKFLOW
 
 TOOLS
   search list_projects project_brief update_project register_asset find_assets rate verify link_items
-  handoff list_handoffs log_session add_note howto activity add_scan_root scan_path stats help
+  handoff list_handoffs log_session add_note delete_note howto activity add_scan_root scan_path stats help
 
 LABELS
   audience  unrestricted (default: personal work, unfiltered) | professional | employer
@@ -366,6 +366,20 @@ def add_note_tool(kind: str = "note", title: str = "", body: str = "", project: 
     n = store.add_note(kind, title, body, project=project or None, tags=tags, machine=machine or config.MACHINE)
     S.embed_in_background()
     return dict(n)
+
+
+@mcp.tool()
+def delete_note(note_id: int = 0) -> dict:
+    """Delete a note by id, with its search and embedding rows. Use it to remove a note written by
+    mistake or superseded by a corrected one; the deleted row is returned so it can be written back.
+    Note ids come from search results and the notes list. Deleting is not how you edit a note that
+    is merely out of date — add a newer one instead, because notes are a dated record."""
+    if not note_id:
+        return {"error": "note_id is required"}
+    n = store.delete_note(int(note_id))
+    if not n:
+        return {"error": f"no note {note_id}"}
+    return {"deleted": dict(n)}
 
 
 @mcp.tool()
@@ -737,6 +751,14 @@ async def api_notes(request: Request):
     sql += " ORDER BY n.created_at DESC LIMIT ?"
     params.append(int(qp.get("limit", 200)))
     return JSONResponse({"notes": q(sql, params)})
+
+
+@mcp.custom_route("/api/note/{id}", methods=["DELETE"])
+async def api_note_delete(request: Request):
+    n = store.delete_note(int(request.path_params["id"]))
+    if not n:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return JSONResponse({"deleted": dict(n)})
 
 
 @mcp.custom_route("/api/activity", methods=["GET"])

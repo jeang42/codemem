@@ -50,4 +50,21 @@ assert not missing, f"missing tables: {missing}"
 print("schema ok")
 PYEOF
 
+echo "-- note lifecycle: add, index, delete, deindex"
+CODEMEM_DB="$TMP/smoke.db" CODEMEM_EMBED=0 "$PY" - <<'PYEOF'
+from codemem.store import add_note, delete_note
+from codemem.db import q
+
+n = add_note("note", "smoke note", "a note written by the smoke test", tags="smoke")
+nid = n["id"]
+assert q("SELECT 1 FROM search_index WHERE kind='note' AND ref_id=?", (nid,)), "note was not indexed"
+
+gone = delete_note(nid)
+assert gone and gone["id"] == nid, "delete_note did not return the deleted row"
+assert not q("SELECT 1 FROM note WHERE id=?", (nid,)), "note row survived the delete"
+assert not q("SELECT 1 FROM search_index WHERE kind='note' AND ref_id=?", (nid,)), "index row survived the delete"
+assert delete_note(nid) is None, "deleting a missing note should return None, not raise"
+print("note lifecycle ok")
+PYEOF
+
 echo "== smoke passed =="

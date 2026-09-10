@@ -92,6 +92,7 @@ brief of the current project (if codemem knows it) and ends with an automatic se
 | `find_assets` | search or list assets by kind/tag/project, or by imported library |
 | `log_session` | what was done, decided, used, abandoned, and what is next |
 | `add_note` | decision, howto, resource, issue, idea |
+| `delete_note` | remove a note written by mistake, with its index and embedding rows |
 | `link_items` | project uses / could-reuse / supersedes / derived-from another |
 | `rate` | maturity: authoritative, usable, experimental, antiquated, sunset, broken, junk, with a why |
 | `verify` | "I ran it today and it works": restarts the computed trust score's freshness clock |

@@ -213,6 +213,13 @@ The scanner and the git feed give you the skeleton. The value comes from:
 - **links**: `link_items("chat-app", "persona-lib", "uses", "same persona loader")`
 - **decisions**: `add_note(kind="decision", title="Why SQLite not Postgres", body=...)`
 
+Notes are the one record type written by hand rather than derived from source, so they are the one
+type that needs correcting. `delete_note(note_id)` removes a note along with its search and
+embedding rows and returns the deleted row, so a mistake can be undone by writing it back. Ids come
+from search results and the notes list; the web UI has a delete control on each note, and the CLI
+has `codemem delete-note <id>`. A note that is merely out of date is not a candidate for deletion —
+notes are a dated record, so add a newer one instead.
+
 ## When the brief says "no record of <directory>"
 
 The scanner only finds directories that look like projects (a `.git`, a `pyproject.toml`, a `CLAUDE.md`

@@ -30,6 +30,8 @@ def main(argv=None):
     rv.add_argument("--stage", type=int, choices=[1, 2], default=0, help="run one stage only (default both)")
     rv.add_argument("--limit", type=int, default=40); rv.add_argument("--dry-run", action="store_true")
     rv.add_argument("--machine", default="", help="stage 2: review every Python asset from this machine (source shipped by its agent)")
+    dn = sub.add_parser("delete-note", help="delete one note by id, with its index and embedding rows")
+    dn.add_argument("ids", nargs="+", type=int)
     pg = sub.add_parser("purge", help="remove a project and everything attached to it (locations, assets, notes, commits, links)")
     pg.add_argument("names", nargs="+")
     sub.add_parser("trust", help="recompute trust scores for all projects and assets")
@@ -85,6 +87,11 @@ def main(argv=None):
         if a.stage in (0, 1): stage1(a.limit, a.dry_run)
         if a.stage in (0, 2): stage2(a.limit, a.dry_run, machine=a.machine)
         from .trust import compute_all; compute_all()
+    elif a.cmd == "delete-note":
+        from .store import delete_note
+        for i in a.ids:
+            n = delete_note(i)
+            print(f"deleted {i}: [{n['kind']}] {n['title'][:70]}" if n else f"no note {i}")
     elif a.cmd == "purge":
         from .store import purge_project
         for n in a.names: print(purge_project(n))

@@ -189,6 +189,19 @@ def add_note(kind, title, body, project=None, tags="", machine="", session_id=""
         return one("SELECT * FROM note WHERE id=?", (nid,))
 
 
+def delete_note(note_id):
+    """Delete one note and its index and embedding rows. Returns the deleted row so a caller can
+    show what went, or undo it by writing it back. Notes are the one record type a human writes by
+    hand, so they are the one type that needs correcting; everything else is rebuilt from source."""
+    n = one("SELECT n.*, p.name AS project FROM note n LEFT JOIN project p ON p.id=n.project_id WHERE n.id=?", (note_id,))
+    if not n:
+        return None
+    with tx() as c:
+        db.unindex(c, "note", note_id)
+        c.execute("DELETE FROM note WHERE id=?", (note_id,))
+    return n
+
+
 def add_link(from_kind, from_id, to_kind, to_id, relation, note=""):
     with tx() as c:
         c.execute("""INSERT OR REPLACE INTO link(from_kind, from_id, to_kind, to_id, relation, note, created_at)
