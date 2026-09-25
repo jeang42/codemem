@@ -85,6 +85,19 @@ Claude Code:
 That is the server alone. For the systemd units, the commit feed and the session hooks, use the
 quick start below from a clone of the repository.
 
+## Run with Docker
+
+    docker build -t codemem .
+    docker run --rm -p 127.0.0.1:8055:8055 codemem                        # throwaway database
+    docker run -d -p 127.0.0.1:8055:8055 -v codemem-data:/data codemem    # keep it in a volume
+
+> **No authentication.** Anyone who can reach the port can read and write everything. Keep the
+> `127.0.0.1:` in `-p`: a bare `-p 8055:8055` publishes the port on every interface, and Docker's
+> port rules bypass most host firewalls.
+
+The image needs none of the optional pieces: embeddings are off (`CODEMEM_EMBED=0`) and there is no
+git host. Pass `-e OLLAMA_URL=... -e CODEMEM_EMBED=1` to turn semantic search on.
+
 ## Quick start
 
 Server (once, on the git host):
@@ -156,6 +169,9 @@ brief of the current project (if codemem knows it) and ends with an automatic se
     client/         hook, remote scan agent, slash command, per-OS installers
     systemd/        user-scope units: service, sync timer (6h), backup timer (02:45)
     docs/           user guide, architecture, git-commit-feed, clients, operations, python-vs-typescript
+    server.json     MCP Registry entry (PyPI package codemem-mcp)
+    glama.json      Glama listing maintainers
+    Dockerfile      container image: throwaway /data, no optional services
 
 Storage: `$CODEMEM_DB` (default `~/.codemem/codemem.db`, SQLite, WAL). Backups: `$CODEMEM_BACKUP_DIR`
 (default `~/.codemem/backups/`).
