@@ -36,7 +36,8 @@ them and add a `CHANGELOG.md` entry, then publish a GitHub release tagged `v<ver
 if the built package, `server.json` and the tag disagree, publishes `codemem-mcp` to PyPI with
 Trusted Publishing, waits for PyPI to serve it, and publishes `server.json` to the MCP Registry.
 No tokens are involved. If the committed version differs from the tag, the run warns and publishes
-the tag's version; fix the repository afterwards.
+the tag's version; fix the repository afterwards. Where each release lands, and the settings kept
+outside the repository, are in `docs/publishing.md`.
 
 ## Two rules that are not negotiable
 

@@ -168,7 +168,7 @@ brief of the current project (if codemem knows it) and ends with an automatic se
       web/          the single-file web UI (+ vendored marked.js)
     client/         hook, remote scan agent, slash command, per-OS installers
     systemd/        user-scope units: service, sync timer (6h), backup timer (02:45)
-    docs/           user guide, architecture, git-commit-feed, clients, operations, python-vs-typescript
+    docs/           user guide, architecture, git-commit-feed, clients, operations, publishing, python-vs-typescript
     server.json     MCP Registry entry (PyPI package codemem-mcp)
     glama.json      Glama listing maintainers
     Dockerfile      container image: throwaway /data, no optional services

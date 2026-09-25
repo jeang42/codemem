@@ -21,6 +21,7 @@ commits with this one and must not be edited.
   server; `github` is github.com/jeang42/codemem). Releases go to PyPI as `codemem-mcp` and to the
   MCP Registry as `io.github.jeang42/codemem` from a GitHub release; see CONTRIBUTING.md.
 - The version is in `codemem/__init__.py` and `server.json`, and they must match.
+- Published locations, what is automated, and the pending rename to codemem-mcp: docs/publishing.md.
 - Labels: audience is `unrestricted` (default) | `professional` | `employer`; origin is `own` |
   `vendor`; visibility is `private` (default) | `shared` | `public`; maturity vocabulary is in
   `db.MATURITY`. Definitions live in docs/USER_GUIDE.md. Do not invent new labels.
