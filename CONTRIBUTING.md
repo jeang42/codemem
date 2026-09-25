@@ -26,6 +26,18 @@ Before pushing:
 It installs nothing, boots the server against a temporary database, and checks that health, the
 web UI, the JSON API and the schema all come up. CI runs the same script on 3.11, 3.12 and 3.13.
 
+## Releasing
+
+The version lives in two files and they must match: `codemem/__init__.py` (`__version__`, which
+`pyproject.toml` reads) and `server.json` (both `version` and `packages[].version`). Bump all of
+them and add a `CHANGELOG.md` entry, then publish a GitHub release tagged `v<version>`.
+
+`.github/workflows/publish.yml` does the rest: it stamps the tag's version into both files, fails
+if the built package, `server.json` and the tag disagree, publishes `codemem-mcp` to PyPI with
+Trusted Publishing, waits for PyPI to serve it, and publishes `server.json` to the MCP Registry.
+No tokens are involved. If the committed version differs from the tag, the run warns and publishes
+the tag's version; fix the repository afterwards.
+
 ## Two rules that are not negotiable
 
 **1. Every write goes through `codemem/store.py`.** The FTS index is maintained alongside the

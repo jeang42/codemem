@@ -17,8 +17,10 @@ commits with this one and must not be edited.
 - **Nothing site-specific goes in this repo.** No machine names, LAN addresses, absolute home
   paths or personal project names, in code, docs or commit messages. Every tunable belongs in
   `codemem/config.py` with an environment override and a neutral default.
-- Publish with `git push` (origin is `codemem.git` on the git server). A public GitHub remote
-  will be added at first release.
+- Publish with `git push origin main && git push github main` (origin is `codemem.git` on the git
+  server; `github` is github.com/jeang42/codemem). Releases go to PyPI as `codemem-mcp` and to the
+  MCP Registry as `io.github.jeang42/codemem` from a GitHub release; see CONTRIBUTING.md.
+- The version is in `codemem/__init__.py` and `server.json`, and they must match.
 - Labels: audience is `unrestricted` (default) | `professional` | `employer`; origin is `own` |
   `vendor`; visibility is `private` (default) | `shared` | `public`; maturity vocabulary is in
   `db.MATURITY`. Definitions live in docs/USER_GUIDE.md. Do not invent new labels.
