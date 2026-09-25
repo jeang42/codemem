@@ -2,7 +2,9 @@
 
 All notable changes to codemem. Versions follow [semantic versioning](https://semver.org/).
 
-## 0.1.0 — unreleased
+## Unreleased
+
+## 0.1.0 — 2026-09-25
 
 First release on PyPI, as `codemem-mcp` (the name `codemem` on PyPI belongs to an unrelated
 project). The import package and the command are both still `codemem`.
