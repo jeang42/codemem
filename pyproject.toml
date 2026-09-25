@@ -1,19 +1,48 @@
 [project]
-name = "codemem"
-version = "0.1.0"
-description = "codemem: one MCP memory for every coding project on every machine"
+# The import package and the command are both `codemem`; "codemem" on PyPI belongs to another project.
+name = "codemem-mcp"
+dynamic = ["version"]
+description = "One MCP memory for every coding project on every machine: projects, reusable assets, sessions, commits, search"
 readme = "README.md"
-license = {text = "Apache-2.0"}
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 authors = [{name = "Jeff Angelcyk"}]
 requires-python = ">=3.11"
 dependencies = ["mcp>=1.10,<2"]
+keywords = ["mcp", "mcp-server", "claude-code", "model-context-protocol", "ai-agents"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Web Environment",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development",
+    "Topic :: Software Development :: Version Control :: Git",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.urls]
+Homepage = "https://github.com/jeang42/codemem"
+Repository = "https://github.com/jeang42/codemem"
+Issues = "https://github.com/jeang42/codemem/issues"
+Changelog = "https://github.com/jeang42/codemem/blob/main/CHANGELOG.md"
 
 [project.scripts]
 codemem = "codemem.cli:main"
+# Same entry point under the distribution name, so `uvx codemem-mcp serve` works.
+codemem-mcp = "codemem.cli:main"
 
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.dynamic]
+# The one place the version lives. server.json must match it; the publish workflow checks.
+version = {attr = "codemem.__version__"}
 
 [tool.setuptools.packages.find]
 include = ["codemem*"]
