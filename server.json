@@ -1,0 +1,88 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.jeang42/codemem",
+  "title": "codemem",
+  "description": "Shared memory for coding agents: projects, reusable code, sessions and commits across machines",
+  "version": "0.1.0",
+  "repository": {
+    "url": "https://github.com/jeang42/codemem",
+    "source": "github",
+    "id": "1363382584"
+  },
+  "websiteUrl": "https://github.com/jeang42/codemem",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "codemem-mcp",
+      "version": "0.1.0",
+      "runtimeHint": "uvx",
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "serve",
+          "description": "Run the MCP server and web UI"
+        }
+      ],
+      "transport": {
+        "type": "streamable-http",
+        "url": "http://localhost:8055/mcp"
+      },
+      "environmentVariables": [
+        {
+          "name": "CODEMEM_DATA",
+          "description": "Directory for the database and backups",
+          "format": "filepath",
+          "default": "~/.codemem",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "CODEMEM_DB",
+          "description": "Path to the SQLite database (overrides CODEMEM_DATA)",
+          "format": "filepath",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "CODEMEM_HOST",
+          "description": "Address to bind. The server has no authentication; use 127.0.0.1 unless the network is trusted",
+          "default": "0.0.0.0",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "CODEMEM_PORT",
+          "description": "Port for MCP (/mcp) and the web UI. The transport URL assumes 8055",
+          "format": "number",
+          "default": "8055",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "OLLAMA_URL",
+          "description": "Ollama base URL for embeddings (semantic search). Without it, search is BM25 only",
+          "default": "http://127.0.0.1:11434",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "CODEMEM_EMBED",
+          "description": "Set to false to disable embeddings entirely",
+          "format": "boolean",
+          "default": "true",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "GIT_ROOT",
+          "description": "Directory of bare git repos to read for the commit feed",
+          "format": "filepath",
+          "default": "/srv/git",
+          "isRequired": false,
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}
