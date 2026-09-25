@@ -1,0 +1,13 @@
+# Only pyproject.toml, README.md, LICENSE, NOTICE and codemem/ are copied; keep the context small.
+.git
+.github
+venv
+.venv
+**/__pycache__
+*.pyc
+*.egg-info
+dist
+build
+*.db
+*.db-wal
+*.db-shm
