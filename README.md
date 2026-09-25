@@ -1,5 +1,7 @@
 # codemem
 
+<!-- mcp-name: io.github.jeang42/codemem -->
+
 **Your coding agents keep rebuilding what you already have. codemem remembers what they built,
 across every project and every machine, and scores each piece on evidence of whether it worked.**
 
@@ -65,6 +67,23 @@ The content is whatever is there. codemem does not filter or judge. Each project
 exclude one when the context calls for it. Nothing is hidden unless asked, with one exception:
 cloned third-party repos are marked `origin = vendor` and stay out of search and lists until you
 ask for them. See docs/USER_GUIDE.md.
+
+## Install from PyPI
+
+The package is `codemem-mcp`; the command it installs is `codemem`.
+
+    pip install codemem-mcp          # or: uv tool install codemem-mcp / pipx install codemem-mcp
+    codemem serve                    # MCP at http://localhost:8055/mcp, web UI at http://localhost:8055/
+
+    uvx codemem-mcp serve            # or run it without installing
+
+Data goes to `~/.codemem/` unless `CODEMEM_DB` or `CODEMEM_DATA` says otherwise. Register it with
+Claude Code:
+
+    claude mcp add --transport http --scope user codemem http://localhost:8055/mcp
+
+That is the server alone. For the systemd units, the commit feed and the session hooks, use the
+quick start below from a clone of the repository.
 
 ## Quick start
 
