@@ -46,8 +46,11 @@ These are not in git and have to be kept in step by hand:
   this is updated.
 - **GitHub environment `pypi`**: deployment rules allow branch `main` and tags `v*`. Nothing
   else can deploy to PyPI.
-- **Glama**: `glama.json` lists `jeang42` as maintainer. The listing is claimed on glama.ai while
-  signed in with GitHub.
+- **Glama**: `glama.json` lists `jeang42` as maintainer. Claim the listing on glama.ai while
+  signed in with GitHub. Status 2026-10-01: Glama indexed the repository on its own, but the
+  listing is not yet claimed and shows "This server cannot be deployed" (no successful build of
+  the `Dockerfile` yet). If the build fails inspection because it expects stdio, a `codemem stdio`
+  subcommand is a small change (`cli.py` and `server.py`, about ten lines).
 
 ## Planned for the next release: rename to codemem-mcp
 
